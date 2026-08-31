@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>תקציב מדריד · נובמבר 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Suez+One&family=Assistant:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body class="p-budget" style="visibility:hidden">
+<div class="wrap">
+
+  <div class="stub">
+    <div class="stripes"></div>
+    <div class="stub-body">
+      <div class="eyebrow">MADRID · 2–13 NOV 2026 · SOLO</div>
+      <div class="total-row">
+        <div class="total" id="totEur">€0</div>
+        <div class="total-ils" id="totIls">≈ ₪0</div>
+      </div>
+      <div class="perday">ליום: <b id="perDay">€0</b> · לינה + אוכל בלבד: <b id="coreDay">€0</b> ליום</div>
+      <div class="comp" id="comp"></div>
+      <div class="legend" id="legend"></div>
+      <div class="stamp">ATLÉTICO<br>MATCHDAY 08.11</div>
+    </div>
+  </div>
+
+  <p style="margin:18px 0 0"><a href="index.html" class="mono" style="font-size:12px;color:var(--slate);text-decoration:none">&larr; חזרה</a></p>
+  <div class="tiers" role="group" aria-label="רמת תקציב">
+    <button class="tier" data-tier="lean"><strong>חסכוני</strong><span>hostel · menú del día</span></button>
+    <button class="tier" data-tier="mid" aria-pressed="true"><strong>מאוזן</strong><span>studio · טאפאס</span></button>
+    <button class="tier" data-tier="rich"><strong>נוח</strong><span>מלון · בלי לספור</span></button>
+  </div>
+
+  <div class="globals">
+    <div class="g"><label for="days">ימים בטיול</label><input type="number" id="days" class="mini" value="12" min="1" max="60"></div>
+    <div class="g"><label for="nights">לילות לינה</label><input type="number" id="nights" class="mini" value="11" min="1" max="60"></div>
+  </div>
+
+  <h2><span class="dot" style="background:#0F1E38"></span>הגעה<span class="pct" data-pct="arrive"></span></h2>
+  <div class="rows">
+    <div class="row" data-item="flight">
+      <div class="txt"><div class="name">טיסה הלוך־חזור תל אביב–מדריד</div><div class="hint">ישירה, נובמבר עונה נמוכה</div></div>
+      <input type="number" data-in="flight" value="330" min="0">
+      <div class="amt" data-amt="flight"></div>
+    </div>
+    <div class="row" data-item="airport">
+      <div class="txt"><div class="name">נמל תעופה ↔ העיר</div><div class="hint">מטרו ≈ €12 לשני הכיוונים · מונית ≈ €66</div></div>
+      <input type="number" data-in="airport" value="12" min="0">
+      <div class="amt" data-amt="airport"></div>
+    </div>
+  </div>
+
+  <h2><span class="dot" style="background:#C4262E"></span>לינה<span class="pct" data-pct="stay"></span></h2>
+  <div class="rows">
+    <div class="row" data-item="nightly">
+      <div class="txt"><div class="name">מחיר ללילה</div><div class="hint">מלסניה / צ'מברי / לה לטינה · ×<span data-echo="nights"></span> לילות</div></div>
+      <input type="number" data-in="nightly" value="95" min="0">
+      <div class="amt" data-amt="nightly"></div>
+    </div>
+  </div>
+
+  <h2><span class="dot" style="background:#C9962C"></span>אוכל ושתייה<span class="pct" data-pct="food"></span></h2>
+  <div class="rows">
+    <div class="row" data-item="daily">
+      <div class="txt"><div class="name">הוצאה יומית</div><div class="hint">קפה €2 · menú del día €15 · ערב €25 · ×<span data-echo="days"></span> ימים</div></div>
+      <input type="number" data-in="daily" value="55" min="0">
+      <div class="amt" data-amt="daily"></div>
+    </div>
+  </div>
+
+  <h2><span class="dot" style="background:#2F6F4E"></span>כדורגל<span class="pct" data-pct="ball"></span></h2>
+  <div class="rows">
+    <div class="row" data-item="barca">
+      <div class="txt"><div class="name">אתלטיקו–ברצלונה · 8.11</div><div class="hint">רשמי €120–220 · שוק משני €280–500</div></div>
+      <input type="number" data-in="barca" value="250" min="0">
+      <div class="amt" data-amt="barca"></div>
+    </div>
+    <div class="row" data-item="ucl">
+      <button class="tog" data-tog="ucl" aria-pressed="true" aria-label="כלול משחק ליגת אלופות"></button>
+      <div class="txt"><div class="name">ליגת האלופות · 3–4.11</div><div class="hint">רק אם ההגרלה תיתן משחק ביתי</div></div>
+      <input type="number" data-in="ucl" value="70" min="0">
+      <div class="amt" data-amt="ucl"></div>
+    </div>
+    <div class="row" data-item="tour">
+      <button class="tog" data-tog="tour" aria-pressed="false" aria-label="כלול סיור אצטדיון"></button>
+      <div class="txt"><div class="name">סיור באצטדיון</div><div class="hint">מטרופוליטנו €25 · ברנבאו €35</div></div>
+      <input type="number" data-in="tour" value="25" min="0">
+      <div class="amt" data-amt="tour"></div>
+    </div>
+  </div>
+
+  <h2><span class="dot" style="background:#5B6472"></span>תחבורה בעיר<span class="pct" data-pct="metro"></span></h2>
+  <div class="rows">
+    <div class="row" data-item="metro">
+      <div class="txt"><div class="name">מטרו ואוטובוסים</div><div class="hint">כרטיסייה 10 נסיעות €12.20 · העיר מאוד הליכתית</div></div>
+      <input type="number" data-in="metro" value="55" min="0">
+      <div class="amt" data-amt="metro"></div>
+    </div>
+  </div>
+
+  <h2><span class="dot" style="background:#8C3B4A"></span>טיולי יום<span class="pct" data-pct="trips"></span></h2>
+  <div class="rows">
+    <div class="row" data-item="trip">
+      <button class="tog" data-tog="trip" aria-pressed="true" aria-label="כלול טיולי יום"></button>
+      <div class="txt"><div class="name">טולדו / סגוביה / אסקוריאל</div><div class="hint">אוטובוס €11 · רכבת מהירה €27 · כולל כניסות</div></div>
+      <input type="number" data-in="tripCount" class="mini" value="2" min="0" max="6" aria-label="מספר טיולי יום">
+      <input type="number" data-in="trip" value="60" min="0">
+      <div class="amt" data-amt="trip"></div>
+    </div>
+  </div>
+
+  <h2><span class="dot" style="background:#3D6E8C"></span>מוזיאונים ואטרקציות<span class="pct" data-pct="museums"></span></h2>
+  <div class="rows">
+    <div class="row" data-item="museums">
+      <div class="txt"><div class="name">פראדו, ריינה סופיה, ארמון</div><div class="hint">לפראדו וריינה סופיה יש שעות חינם בערב</div></div>
+      <input type="number" data-in="museums" value="130" min="0">
+      <div class="amt" data-amt="museums"></div>
+    </div>
+  </div>
+
+  <h2><span class="dot" style="background:#A9A497"></span>שונות ורזרבה<span class="pct" data-pct="misc"></span></h2>
+  <div class="rows">
+    <div class="row" data-item="misc">
+      <div class="txt"><div class="name">קניות, ביטוח, מה שיצא</div><div class="hint">אל תוריד את זה לאפס</div></div>
+      <input type="number" data-in="misc" value="200" min="0">
+      <div class="amt" data-amt="misc"></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div class="lbl">סה״כ</div>
+    <div class="big" id="footEur">€0</div>
+    <div class="rate">
+      <label for="rate">שער €→₪</label>
+      <input type="number" id="rate" class="mini" value="4.05" min="1" max="10" step="0.01">
+      <span id="footIls" style="font-family:'IBM Plex Mono',monospace;direction:ltr"></span>
+    </div>
+  </div>
+
+  <div class="notes">
+    <p><b>המספרים ברירת המחדל</b> הם הערכות לנובמבר 2026 — עונה נמוכה במדריד. כל שדה ניתן לעריכה, והסכום מתעדכן חי.</p>
+    <p><b>הסעיף התנודתי היחיד</b> הוא הכרטיס לברצלונה. אם תשיג אותו במכירה הרשמית זה הפרש של €150–250 מול השוק המשני — שווה להשקיע בזה מאמץ מוקדם.</p>
+    <p><b>לא כלול:</b> ויזה (לא נדרשת עם דרכון ספרדי), כרטיסי טיסה פנימיים, ולינה בערים אחרות.</p>
+  </div>
+
+</div>
+
+<script type="module" src="assets/auth-guard.js"></script>
+<script src="assets/budget.js"></script>
+</body>
+</html>

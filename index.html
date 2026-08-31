@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>מדריד · נובמבר 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Suez+One&family=Assistant:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body class="p-home" style="visibility:hidden">
+<div class="wrap">
+
+  <div style="display:flex;justify-content:flex-end;margin-top:14px">
+    <button id="signOutBtn" class="linkbtn">התנתקות</button>
+  </div>
+
+  <div class="stub">
+    <div class="stripes"></div>
+    <div class="stub-body">
+      <div class="eyebrow">MADRID · NOV 2026 · SOLO</div>
+      <h1>מדריד, נובמבר 2026</h1>
+      <div class="sub">12 יום סביב אתלטיקו–ברצלונה, עם פתח לבדיקת רילוקיישן</div>
+
+      <div class="countdown">
+        <div class="cd">ימים עד המשחק<b id="cdDays">—</b></div>
+        <div class="cd">תאריכי הטיול<b>2–13.11</b></div>
+        <div class="cd">תקציב מאוזן<b>€2,870</b></div>
+      </div>
+
+      <div class="stamp">ATLÉTICO<br>MATCHDAY 08.11</div>
+    </div>
+  </div>
+
+  <div class="cards">
+    <a class="card" href="dossier.html">
+      <div class="ck">DOSSIER</div>
+      <div class="ch">תיק הטיול</div>
+      <div class="cd2">עשרה פרקים: המשחק והתאריכים, אסטרטגיית כרטיסים, שכונות, לינה, חיי לילה, מועדונים, תקציב, מבנה הימים ורשימת משימות.</div>
+    </a>
+    <a class="card" href="budget.html">
+      <div class="ck">CALCULATOR</div>
+      <div class="ch">מחשבון תקציב</div>
+      <div class="cd2">שלוש רמות מוכנות וכל שדה ניתן לעריכה. מציג פילוח לפי קטגוריה, עלות ליום והמרה לשקלים.</div>
+    </a>
+  </div>
+
+  <footer>
+    אין שלב בנייה, אבל יש התחברות — האתר דורש חיבור לרשת ומשתמש מחובר.
+    כל הצבעים והגופנים נמצאים ב-<span class="mono">assets/styles.css</span>.
+  </footer>
+
+</div>
+<script>
+(function(){
+  // 8.11.2026, 20:00 שעון מדריד (CET = UTC+1)
+  const KICKOFF = new Date(Date.UTC(2026, 10, 8, 19, 0, 0));
+  const el = document.getElementById('cdDays');
+  const diff = KICKOFF - new Date();
+  const days = Math.ceil(diff / 86400000);
+  el.textContent = diff > 0 ? days : 'עבר';
+})();
+</script>
+<script type="module" src="assets/auth-guard.js"></script>
+<script type="module">
+  import { auth } from './assets/firebase-init.js';
+  import { signOut } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+
+  document.getElementById('signOutBtn').addEventListener('click', function () {
+    signOut(auth).then(function () {
+      location.replace('login.html');
+    });
+  });
+</script>
+</body>
+</html>

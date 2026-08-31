@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>התחברות · מדריד נובמבר 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Suez+One&family=Assistant:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body class="p-login">
+<div class="wrap">
+
+  <div class="stub">
+    <div class="stripes"></div>
+    <div class="stub-body">
+      <div class="eyebrow">MADRID · NOV 2026</div>
+      <h1>התחברות</h1>
+      <div class="sub">תיק הטיול פרטי — יש להתחבר כדי להמשיך</div>
+    </div>
+  </div>
+
+  <form id="loginForm" class="login-form" novalidate>
+    <div class="field">
+      <label for="email">אימייל</label>
+      <input type="email" id="email" name="email" dir="ltr" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="password">סיסמה</label>
+      <input type="password" id="password" name="password" dir="ltr" autocomplete="current-password" required>
+    </div>
+
+    <div class="box warn" id="loginError" hidden>
+      <p id="loginErrorText"></p>
+    </div>
+
+    <button type="submit" class="btn" id="loginSubmit">כניסה</button>
+  </form>
+
+</div>
+<script type="module">
+  import { auth } from './assets/firebase-init.js';
+  import {
+    onAuthStateChanged,
+    signInWithEmailAndPassword
+  } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+
+  // Already signed in — no need to see the login form.
+  onAuthStateChanged(auth, function (user) {
+    if (user) location.replace('index.html');
+  });
+
+  var ERROR_MESSAGES = {
+    'auth/invalid-credential': 'אימייל או סיסמה שגויים.',
+    'auth/wrong-password': 'אימייל או סיסמה שגויים.',
+    'auth/user-not-found': 'אימייל או סיסמה שגויים.',
+    'auth/invalid-email': 'כתובת אימייל לא תקינה.',
+    'auth/too-many-requests': 'יותר מדי ניסיונות. נסה שוב בעוד כמה דקות.',
+    'auth/network-request-failed': 'אין חיבור לרשת. בדוק את החיבור ונסה שוב.'
+  };
+
+  var form = document.getElementById('loginForm');
+  var errBox = document.getElementById('loginError');
+  var errText = document.getElementById('loginErrorText');
+  var submitBtn = document.getElementById('loginSubmit');
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    errBox.hidden = true;
+    submitBtn.disabled = true;
+
+    signInWithEmailAndPassword(auth, form.email.value.trim(), form.password.value)
+      .then(function () {
+        location.replace('index.html');
+      })
+      .catch(function (err) {
+        errText.textContent = ERROR_MESSAGES[err.code] || 'משהו השתבש. נסה שוב.';
+        errBox.hidden = false;
+        submitBtn.disabled = false;
+      });
+  });
+</script>
+</body>
+</html>
