@@ -243,21 +243,21 @@ select.cur{
 select.cur:focus{outline:none;border-color:var(--rojo)}
 
 .lockbtn{
-  flex:none;width:19px;height:19px;line-height:17px;padding:0;
-  font-size:11px;text-align:center;
+  flex:none;width:19px;height:19px;padding:0;
+  display:flex;align-items:center;justify-content:center;
   border:1.5px solid var(--slate);border-radius:var(--radius);
-  background:#fff;cursor:pointer;
+  background:#fff;cursor:pointer;color:var(--slate);
 }
+.lockbtn svg{display:block}
 .lockbtn:focus-visible{outline:2px solid var(--rojo);outline-offset:2px}
-.lockbtn[aria-pressed="true"]{border-color:#2F6F4E;background:rgba(47,111,78,.15)}
+.lockbtn[aria-pressed="true"]{border-color:#2F6F4E;background:rgba(47,111,78,.15);color:#2F6F4E}
 
 .lockdate-wrap{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:11px;color:var(--slate)}
 .lockdate-wrap input[type=date]{
   font-family:var(--font-mono);font-size:11px;padding:3px 5px;flex:none;
   border:1.5px solid var(--line);border-radius:var(--radius);
-  background:#fff;color:var(--ink);
+  background:#fff;color:var(--ink);direction:ltr;
 }
-.lockdate-fmt{font-family:var(--font-mono);direction:ltr;font-size:11px;color:var(--slate)}
 
 @media(max-width:400px){
   .row{flex-wrap:wrap}

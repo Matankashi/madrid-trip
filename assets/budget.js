@@ -33,6 +33,12 @@ const SYMS = {EUR:'€', USD:'$', ILS:'₪'};
    מסמך ישן שנשמר לפני התכונה) — כך שגם מסמך Firestore ישן, בלי
    currencies בכלל, ממשיך לעבוד כאילו כל השורות ביורו. */
 
+/* אייקוני מנעול כ-SVG מוטבע ולא אימוג'י — 🔒/🔓 נראים כמעט זהים בגודל
+   קטן בהרבה פלטפורמות. ההבדל הוויזואלי כאן הוא מיקום ה"ידית": סגורה
+   ומקיפה את שני צידי הגוף מול פתוחה ותלויה מצד אחד בלבד. */
+const LOCK_ICON_CLOSED = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>';
+const LOCK_ICON_OPEN = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg>';
+
 const PRESETS = {
   lean:{flight:230,airport:12,nightly:58,daily:32,barca:140,ucl:45,tour:25,metro:35,trip:30,tripCount:2,museums:55,misc:120},
   mid: {flight:330,airport:12,nightly:95,daily:55,barca:250,ucl:70,tour:25,metro:55,trip:60,tripCount:2,museums:130,misc:200},
@@ -87,19 +93,6 @@ function fmtDate(iso){
   return 'עודכן ' + String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear();
 }
 
-/* <input type="date"> מציג לפי לוקאל הדפדפן/מערכת ההפעלה ולא לפי
-   ה-lang של הדף — אי אפשר לכפות dd/mm/yyyy על הווידג'ט הילידי עצמו
-   באופן אמין בכל דפדפן. הפתרון: להשאיר את הווידג'ט לבחירה/עריכה
-   (ה-value שלו תמיד ISO yyyy-mm-dd, בלי קשר לתצוגה), ולהציג טקסט
-   dd/mm/yyyy קבוע לצידו שנגזר מאותו value. */
-function fmtDdMmYyyy(iso){
-  if (!iso) return '';
-  const parts = iso.split('-');
-  if (parts.length !== 3) return '';
-  const [y, m, d] = parts;
-  return `${d}/${m}/${y}`;
-}
-
 function todayIso(){
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
@@ -118,7 +111,7 @@ function setRowLocked(id, isLocked){
   if (tripCountInput) tripCountInput.disabled = isLocked;
   if (lockBtn) {
     lockBtn.setAttribute('aria-pressed', String(isLocked));
-    lockBtn.textContent = isLocked ? '🔒' : '🔓';
+    lockBtn.innerHTML = isLocked ? LOCK_ICON_CLOSED : LOCK_ICON_OPEN;
   }
   if (dateWrap) dateWrap.hidden = !isLocked;
 }
@@ -172,8 +165,6 @@ function render(){
   CURRENCY_IDS.forEach(id => {
     const row = document.querySelector(`[data-item="${id}"]`);
     if(row) row.classList.toggle('locked', !!locks[id]);
-    const fmtEl = document.querySelector(`[data-lockdate-fmt="${id}"]`);
-    if(fmtEl) fmtEl.textContent = locks[id] ? fmtDdMmYyyy(locks[id].chargedOn) : '';
   });
 
   const ilsRateForSplit = rateValue('ils');
