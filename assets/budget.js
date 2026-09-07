@@ -58,6 +58,7 @@ const TIER_LABELS = {lean:'חסכוני', mid:'מאוזן', rich:'נוח', custo
 let tier = 'mid';
 let customValues = {};
 let customCurrencies = {};
+let showTierRefs = true; // מתג גלוי/מוסתר לשורת הייחוס בכל שורה, נשמר ל-Firestore
 const GROUPS = [
   {key:'arrive', label:'הגעה',    color:'#0F1E38', items:['flight','airport']},
   {key:'stay',   label:'לינה',    color:'#C4262E', items:['nightly']},
@@ -196,6 +197,24 @@ function render(){
   CURRENCY_IDS.forEach(id => {
     const row = document.querySelector(`[data-item="${id}"]`);
     if(row) row.classList.toggle('locked', !!locks[id]);
+  });
+
+  // שורת ייחוס לכל שורה: תמיד ביורו (זה המטבע שבו מוגדרים ה-PRESETS),
+  // גם אם השורה עצמה בשקל/דולר — לא ממירים, זו נקודת ייחוס קבועה ולא
+  // חישוב. תמיד ליחידה (מחיר ללילה/ליום/לטיול, לא מוכפל) כמו שהשדה
+  // עצמו מציג. עובדת גם על שורה נעולה — הייחוס לא תלוי בכלל בנעילה.
+  const showRefsNow = tier === 'custom' && showTierRefs;
+  const refToggleWrap = $('#refToggleWrap');
+  if (refToggleWrap) refToggleWrap.hidden = tier !== 'custom';
+  CURRENCY_IDS.forEach(id => {
+    const refEl = document.querySelector(`[data-tier-ref="${id}"]`);
+    if (!refEl) return;
+    if (showRefsNow) {
+      refEl.hidden = false;
+      refEl.textContent = 'ייחוס: ' + ['lean', 'mid', 'rich'].map(t => eur(PRESETS[t][id])).join(' · ');
+    } else {
+      refEl.hidden = true;
+    }
   });
 
   const ilsRateForSplit = rateValue('ils');
@@ -381,6 +400,7 @@ function getState(){
   Object.keys(locks).forEach(id => { locksOut[id] = Object.assign({}, locks[id]); });
   return {
     tier,
+    showTierRefs,
     custom: {values: Object.assign({}, customValues), currencies: Object.assign({}, customCurrencies)},
     toggles: Object.assign({}, toggles), locks: locksOut,
     rates: {
@@ -411,6 +431,9 @@ function applyState(data){
     customCurrencies = {};
     tier = 'mid';
   }
+  showTierRefs = (data && data.showTierRefs !== undefined) ? !!data.showTierRefs : true;
+  const refToggleEl = $('#refToggle');
+  if (refToggleEl) refToggleEl.checked = showTierRefs;
 
   const savedLocks = (data && data.locks) || {};
   locks = {};
@@ -488,6 +511,12 @@ function scheduleSave(){
 }
 
 $$('.tier').forEach(b => b.addEventListener('click', () => applyTier(b.dataset.tier)));
+const refToggleInput = $('#refToggle');
+if (refToggleInput) refToggleInput.addEventListener('change', e => {
+  showTierRefs = e.target.checked;
+  render();
+  scheduleSave();
+});
 $$('.tog').forEach(b => b.addEventListener('click', () => {
   const k = b.dataset.tog;
   toggles[k] = !toggles[k];

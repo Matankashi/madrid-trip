@@ -37,6 +37,11 @@
     <button class="tier" data-tier="custom"><strong>מותאם אישית</strong><span>המספרים שלי</span></button>
   </div>
 
+  <label class="ref-toggle" id="refToggleWrap" hidden>
+    <input type="checkbox" id="refToggle" checked>
+    הצג ערכי ייחוס בשורות
+  </label>
+
   <div class="globals">
     <div class="g"><label for="days">ימים בטיול</label><input type="number" id="days" class="mini" value="12" min="1" max="60"></div>
     <div class="g"><label for="nights">לילות לינה</label><input type="number" id="nights" class="mini" value="11" min="1" max="60"></div>
@@ -48,6 +53,7 @@
       <button class="lockbtn" data-lockbtn="flight" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
       <div class="txt">
         <div class="name">טיסה הלוך־חזור תל אביב–מדריד</div><div class="hint">ישירה, נובמבר עונה נמוכה</div>
+        <div class="tier-ref" data-tier-ref="flight" hidden></div>
         <div class="lockdate-wrap" data-lockdatewrap="flight" hidden><label>תאריך חיוב</label><input type="date" data-lockdate="flight" lang="he-IL"></div>
       </div>
       <select class="cur" data-cur="flight" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
@@ -58,6 +64,7 @@
       <button class="lockbtn" data-lockbtn="airport" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
       <div class="txt">
         <div class="name">נמל תעופה ↔ העיר</div><div class="hint">מטרו ≈ €12 לשני הכיוונים · מונית ≈ €66</div>
+        <div class="tier-ref" data-tier-ref="airport" hidden></div>
         <div class="lockdate-wrap" data-lockdatewrap="airport" hidden><label>תאריך חיוב</label><input type="date" data-lockdate="airport" lang="he-IL"></div>
       </div>
       <select class="cur" data-cur="airport" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
@@ -72,6 +79,7 @@
       <button class="lockbtn" data-lockbtn="nightly" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
       <div class="txt">
         <div class="name">מחיר ללילה</div><div class="hint">מלסניה / צ'מברי / לה לטינה · ×<span data-echo="nights"></span> לילות</div>
+        <div class="tier-ref" data-tier-ref="nightly" hidden></div>
         <div class="lockdate-wrap" data-lockdatewrap="nightly" hidden><label>תאריך חיוב</label><input type="date" data-lockdate="nightly" lang="he-IL"></div>
       </div>
       <select class="cur" data-cur="nightly" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
@@ -86,6 +94,7 @@
       <button class="lockbtn" data-lockbtn="daily" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
       <div class="txt">
         <div class="name">הוצאה יומית</div><div class="hint">קפה €2 · menú del día €15 · ערב €25 · ×<span data-echo="days"></span> ימים</div>
+        <div class="tier-ref" data-tier-ref="daily" hidden></div>
         <div class="lockdate-wrap" data-lockdatewrap="daily" hidden><label>תאריך חיוב</label><input type="date" data-lockdate="daily" lang="he-IL"></div>
       </div>
       <select class="cur" data-cur="daily" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
@@ -100,6 +109,7 @@
       <button class="lockbtn" data-lockbtn="barca" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
       <div class="txt">
         <div class="name">אתלטיקו–ברצלונה · 8.11</div><div class="hint">רשמי €120–220 · שוק משני €280–500</div>
+        <div class="tier-ref" data-tier-ref="barca" hidden></div>
         <div class="lockdate-wrap" data-lockdatewrap="barca" hidden><label>תאריך חיוב</label><input type="date" data-lockdate="barca" lang="he-IL"></div>
       </div>
       <select class="cur" data-cur="barca" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
@@ -111,6 +121,7 @@
       <button class="tog" data-tog="ucl" aria-pressed="true" aria-label="כלול משחק ליגת אלופות"></button>
       <div class="txt">
         <div class="name">ליגת האלופות · 3–4.11</div><div class="hint">רק אם ההגרלה תיתן משחק ביתי</div>
+        <div class="tier-ref" data-tier-ref="ucl" hidden></div>
         <div class="lockdate-wrap" data-lockdatewrap="ucl" hidden><label>תאריך חיוב</label><input type="date" data-lockdate="ucl" lang="he-IL"></div>
       </div>
       <select class="cur" data-cur="ucl" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
@@ -122,6 +133,7 @@
       <button class="tog" data-tog="tour" aria-pressed="false" aria-label="כלול סיור אצטדיון"></button>
       <div class="txt">
         <div class="name">סיור באצטדיון</div><div class="hint">מטרופוליטנו €25 · ברנבאו €35</div>
+        <div class="tier-ref" data-tier-ref="tour" hidden></div>
         <div class="lockdate-wrap" data-lockdatewrap="tour" hidden><label>תאריך חיוב</label><input type="date" data-lockdate="tour" lang="he-IL"></div>
       </div>
       <select class="cur" data-cur="tour" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
@@ -136,6 +148,7 @@
       <button class="lockbtn" data-lockbtn="metro" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
       <div class="txt">
         <div class="name">מטרו ואוטובוסים</div><div class="hint">כרטיסייה 10 נסיעות €12.20 · העיר מאוד הליכתית</div>
+        <div class="tier-ref" data-tier-ref="metro" hidden></div>
         <div class="lockdate-wrap" data-lockdatewrap="metro" hidden><label>תאריך חיוב</label><input type="date" data-lockdate="metro" lang="he-IL"></div>
       </div>
       <select class="cur" data-cur="metro" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
@@ -151,6 +164,7 @@
       <button class="tog" data-tog="trip" aria-pressed="true" aria-label="כלול טיולי יום"></button>
       <div class="txt">
         <div class="name">טולדו / סגוביה / אסקוריאל</div><div class="hint">אוטובוס €11 · רכבת מהירה €27 · כולל כניסות</div>
+        <div class="tier-ref" data-tier-ref="trip" hidden></div>
         <div class="lockdate-wrap" data-lockdatewrap="trip" hidden><label>תאריך חיוב</label><input type="date" data-lockdate="trip" lang="he-IL"></div>
       </div>
       <input type="number" data-in="tripCount" class="mini" value="2" min="0" max="6" aria-label="מספר טיולי יום">
@@ -166,6 +180,7 @@
       <button class="lockbtn" data-lockbtn="museums" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
       <div class="txt">
         <div class="name">פראדו, ריינה סופיה, ארמון</div><div class="hint">לפראדו וריינה סופיה יש שעות חינם בערב</div>
+        <div class="tier-ref" data-tier-ref="museums" hidden></div>
         <div class="lockdate-wrap" data-lockdatewrap="museums" hidden><label>תאריך חיוב</label><input type="date" data-lockdate="museums" lang="he-IL"></div>
       </div>
       <select class="cur" data-cur="museums" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
@@ -180,6 +195,7 @@
       <button class="lockbtn" data-lockbtn="misc" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
       <div class="txt">
         <div class="name">קניות, ביטוח, מה שיצא</div><div class="hint">אל תוריד את זה לאפס</div>
+        <div class="tier-ref" data-tier-ref="misc" hidden></div>
         <div class="lockdate-wrap" data-lockdatewrap="misc" hidden><label>תאריך חיוב</label><input type="date" data-lockdate="misc" lang="he-IL"></div>
       </div>
       <select class="cur" data-cur="misc" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>

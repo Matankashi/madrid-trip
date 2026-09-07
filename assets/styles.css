@@ -212,6 +212,9 @@ td.num{font-family:var(--font-mono);direction:ltr;text-align:left;white-space:no
 .tier strong{display:block;font-size:15px;font-weight:700}
 .tier span{display:block;font-family:var(--font-mono);font-size:11px;color:var(--slate);direction:ltr;text-align:right;margin-top:1px}
 
+.ref-toggle{display:flex;align-items:center;gap:7px;margin-top:10px;font-size:12.5px;color:var(--slate);cursor:pointer;width:fit-content}
+.ref-toggle input{margin:0;cursor:pointer}
+
 .globals{display:flex;gap:10px;margin:14px 0 26px;flex-wrap:wrap;padding:12px 14px;border:1px dashed var(--line);border-radius:var(--radius)}
 .g{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--slate)}
 .g label{white-space:nowrap}
@@ -252,6 +255,8 @@ select.cur:focus{outline:none;border-color:var(--rojo)}
 .lockbtn svg{display:block}
 .lockbtn:focus-visible{outline:2px solid var(--rojo);outline-offset:2px}
 .lockbtn[aria-pressed="true"]{border-color:#2F6F4E;background:rgba(47,111,78,.15);color:#2F6F4E}
+
+.tier-ref{font-size:11px;color:var(--slate);opacity:.8;margin-top:3px}
 
 .lockdate-wrap{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:11px;color:var(--slate)}
 .lockdate-wrap input[type=date]{
