@@ -271,12 +271,14 @@ select.cur:focus{outline:none;border-color:var(--rojo)}
   border-right:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(40deg);
 }
 
-.foot{margin-top:32px;border-top:1.5px solid var(--ink);padding-top:16px;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
+.foot{margin-top:32px;border-top:1.5px solid var(--ink);padding-top:16px}
+.foot-total{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
 .foot .lbl{font-family:var(--font-display);font-size:16px}
 .foot .big{font-family:var(--font-mono);font-weight:600;font-size:26px;direction:ltr;margin-right:auto}
 .foot-ils{font-family:var(--font-mono);direction:ltr;font-size:15px;color:var(--slate)}
-.rates{display:flex;gap:16px;flex-wrap:wrap;width:100%}
+.rates{display:flex;gap:16px;flex-wrap:wrap;margin-top:14px}
 .rate{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--slate);flex-wrap:wrap}
+.rate input[type=number]{width:86px}
 .rate-date{font-size:10px;color:var(--slate);opacity:.7;white-space:nowrap}
 .rate-error{flex:1 1 100%;font-size:11px;color:var(--rojo)}
 .refresh{
