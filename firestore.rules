@@ -2,48 +2,36 @@
 //
 // What this allows:
 //   - A signed-in user (this project uses email/password auth) may
-//     read and write ONLY the single document at
-//     /users/{their own uid}/state/checklist.
+//     read and write ANY document under their own /users/{their uid}
+//     subtree — not just the checklist. This was widened from a
+//     single-document rule to make room for /state/budget (and any
+//     future per-user state doc) without a rules change each time.
 //
 // What this blocks:
-//   - Everything else in the database: no other collection, document,
-//     or subcollection is reachable by any client, signed in or not.
+//   - Everything else in the database: any other user's /users/{uid}
+//     subtree, and any path outside /users entirely.
 //   - All unauthenticated access — reads and writes both.
-//   - A signed-in user reading or writing another user's checklist
-//     document, even though the path pattern would otherwise match.
-//   - A write where the payload's own `userId`/`uid` field disagrees
-//     with the path — the path segment (bound to request.auth.uid) is
-//     the only thing trusted; the document body is never used to
-//     authorize the write.
-//   - Checklist documents with an unreasonable number of fields, as a
-//     guard against abuse/runaway writes.
+//   - A signed-in user reading or writing another user's data, even
+//     though the path pattern would otherwise match — only the path
+//     segment (bound to request.auth.uid) is trusted, never the
+//     document body.
 
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    match /users/{userId}/state/checklist {
-      allow read: if request.auth != null
-                  && request.auth.uid == userId;
-
-      // request.resource only exists on create/update, not on read or
-      // delete — the size guard has to live here, not on a combined
-      // "read, write" rule, or reads would fail evaluation.
-      allow create, update: if request.auth != null
-                             && request.auth.uid == userId
-                             && request.resource.data.keys().size() <= 50;
-
-      allow delete: if request.auth != null
-                    && request.auth.uid == userId;
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == userId;
     }
 
     // Documentation only — not doing any security work. Firestore
     // denies any path with no matching `allow` by default, and rules
     // are a union across all matching blocks, so this `if false` can't
-    // revoke access a more specific rule above already granted; it
-    // exists purely to make the "everything else is unreachable" intent
-    // explicit to a reader.
+    // revoke access the rule above already granted; it exists purely
+    // to make the "everything else is unreachable" intent explicit to
+    // a reader.
     match /{document=**} {
       allow read, write: if false;
     }

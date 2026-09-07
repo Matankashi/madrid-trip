@@ -1,3 +1,28 @@
+import { auth, db } from './firebase-init.js';
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+
+/* שמירת המחשבון. מקור האמת הוא Firestore, ב-/users/{uid}/state/budget,
+   עם גיבוי אופליין ב-localStorage — אותו דפוס כמו dossier.js. שני
+   הבדלים מכוונים מול dossier.js, שניהם כדי שעריכה ידנית לעולם לא
+   תאבד:
+   1. הטעינה הראשונית היא getDoc חד-פעמי ולא onSnapshot מתמשך. עם
+      onSnapshot, הד (echo) של כתיבה קודמת עלול לחזור בדיוק כשהמשתמש
+      באמצע הקלדה בשדה אחר ולדרוס אותה באמצע התו. במחשבון תקציב, בניגוד
+      לצ'קליסט, יש הרבה הקלדה רציפה בשדות מספר — אז חד-פעמי בטוח יותר.
+      המשמעות: אין סנכרון חי בין מכשירים פתוחים בו-זמנית לעמוד הזה,
+      רק רענון עם כל טעינת דף.
+   2. הכתיבה המבוזרת (debounce) קוראת את מצב ה-DOM מחדש ברגע שהיא
+      *יורה*, לא ברגע שהיא *נקבעה* — כך שאם לוחצים על רמת תקציב ואז
+      עורכים שדה בתוך חלון ה-800ms, הכתיבה שבסוף כוללת גם את העריכה.
+   דגל userEdited חוסם את ה-getDoc מלדרוס עריכה שכבר בוצעה בזמן
+   שהבקשה עוד באוויר (חלון קצר בטעינת העמוד). */
+
+const FIELD_IDS = ['flight','airport','nightly','daily','barca','ucl','tour','metro','trip','tripCount','museums','misc'];
+const GLOBAL_IDS = ['days','nights','rate'];
+const STORE_KEY = 'madrid.budget.v1';
+const DEBOUNCE_MS = 800;
+
 const PRESETS = {
   lean:{flight:230,airport:12,nightly:58,daily:32,barca:140,ucl:45,tour:25,metro:35,trip:30,tripCount:2,museums:55,misc:120},
   mid: {flight:330,airport:12,nightly:95,daily:55,barca:250,ucl:70,tour:25,metro:55,trip:60,tripCount:2,museums:130,misc:200},
@@ -97,15 +122,93 @@ function applyTier(t){
   render();
 }
 
-$$('.tier').forEach(b => b.addEventListener('click', () => applyTier(b.dataset.tier)));
+// ברירות המחדל שכבר ב-HTML, נלכדות לפני שכל נתון שמור נטען — הן
+// רשת הביטחון כששדה קיים ב-DOM אבל חסר במסמך השמור (data-c חדש
+// שנוסף אחרי שהמסמך נכתב בפעם האחרונה).
+const defaults = {values: {}, toggles: Object.assign({}, toggles)};
+FIELD_IDS.forEach(id => { const el = $(`[data-in="${id}"]`); if (el) defaults.values[id] = el.value; });
+GLOBAL_IDS.forEach(id => { const el = $(`#${id}`); if (el) defaults.values[id] = el.value; });
+
+function getState(){
+  const values = {};
+  FIELD_IDS.forEach(id => { const el = $(`[data-in="${id}"]`); if (el) values[id] = el.value; });
+  GLOBAL_IDS.forEach(id => { const el = $(`#${id}`); if (el) values[id] = el.value; });
+  return { values, toggles: Object.assign({}, toggles) };
+}
+
+function applyState(data){
+  const values = (data && data.values) || {};
+  const savedToggles = (data && data.toggles) || {};
+  FIELD_IDS.forEach(id => {
+    const el = $(`[data-in="${id}"]`);
+    if (el) el.value = values[id] !== undefined ? values[id] : defaults.values[id];
+  });
+  GLOBAL_IDS.forEach(id => {
+    const el = $(`#${id}`);
+    if (el) el.value = values[id] !== undefined ? values[id] : defaults.values[id];
+  });
+  Object.keys(defaults.toggles).forEach(k => {
+    toggles[k] = savedToggles[k] !== undefined ? !!savedToggles[k] : defaults.toggles[k];
+    const btn = $(`[data-tog="${k}"]`);
+    if (btn) btn.setAttribute('aria-pressed', String(toggles[k]));
+  });
+  render();
+}
+
+function loadLocal(){
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)); }
+  catch (e) { return null; }
+}
+
+function saveLocal(state){
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+  catch (e) { /* אחסון חסום — ממשיכים בלי שמירה מקומית */ }
+}
+
+let docRef = null;
+let saveTimer = null;
+let userEdited = false;
+
+function scheduleSave(){
+  userEdited = true;
+  saveLocal(getState());
+  if (!docRef) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(function(){
+    setDoc(docRef, getState()).catch(function(){ /* אופליין — כבר נשמר ב-localStorage */ });
+  }, DEBOUNCE_MS);
+}
+
+$$('.tier').forEach(b => b.addEventListener('click', () => { applyTier(b.dataset.tier); scheduleSave(); }));
 $$('.tog').forEach(b => b.addEventListener('click', () => {
   const k = b.dataset.tog;
   toggles[k] = !toggles[k];
   b.setAttribute('aria-pressed', String(toggles[k]));
   render();
+  scheduleSave();
 }));
 document.addEventListener('input', e => {
-  if(e.target.matches('input[type=number]')) render();
+  if(e.target.matches('input[type=number]')) { render(); scheduleSave(); }
 });
 
 render();
+
+onAuthStateChanged(auth, function(user){
+  if (!user) return; // assets/auth-guard.js כבר מטפל בהפניה להתחברות
+
+  docRef = doc(db, 'users', user.uid, 'state', 'budget');
+
+  getDoc(docRef).then(function(snap){
+    if (userEdited) return; // המשתמש כבר התחיל לערוך לפני שהתשובה חזרה
+    if (snap.exists()) {
+      applyState(snap.data());
+    } else {
+      const local = loadLocal();
+      if (local) applyState(local);
+    }
+  }).catch(function(){
+    if (userEdited) return;
+    const local = loadLocal();
+    if (local) applyState(local);
+  });
+});
