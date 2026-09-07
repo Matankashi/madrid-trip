@@ -175,7 +175,11 @@ function scheduleSave(){
   if (!docRef) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(function(){
-    setDoc(docRef, getState()).catch(function(){ /* אופליין — כבר נשמר ב-localStorage */ });
+    setDoc(docRef, getState()).catch(function(err){
+      // עדיין נשמר ב-localStorage, אבל כשל שקט פה נראה בדיוק כמו הצלחה —
+      // בלי הלוג הזה קשה להבחין בין "לא נכתב" ל"נכתב ולא הגיע".
+      console.error('madrid-trip: budget setDoc failed', err);
+    });
   }, DEBOUNCE_MS);
 }
 
@@ -206,7 +210,8 @@ onAuthStateChanged(auth, function(user){
       const local = loadLocal();
       if (local) applyState(local);
     }
-  }).catch(function(){
+  }).catch(function(err){
+    console.error('madrid-trip: budget getDoc failed', err);
     if (userEdited) return;
     const local = loadLocal();
     if (local) applyState(local);
