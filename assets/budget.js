@@ -84,7 +84,20 @@ function fmtDate(iso){
   if (!iso) return 'טרם עודכן';
   const d = new Date(iso + 'T00:00:00');
   if (isNaN(d)) return 'טרם עודכן';
-  return 'עודכן ' + String(d.getDate()).padStart(2,'0') + '.' + String(d.getMonth()+1).padStart(2,'0') + '.' + String(d.getFullYear()).slice(-2);
+  return 'עודכן ' + String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear();
+}
+
+/* <input type="date"> מציג לפי לוקאל הדפדפן/מערכת ההפעלה ולא לפי
+   ה-lang של הדף — אי אפשר לכפות dd/mm/yyyy על הווידג'ט הילידי עצמו
+   באופן אמין בכל דפדפן. הפתרון: להשאיר את הווידג'ט לבחירה/עריכה
+   (ה-value שלו תמיד ISO yyyy-mm-dd, בלי קשר לתצוגה), ולהציג טקסט
+   dd/mm/yyyy קבוע לצידו שנגזר מאותו value. */
+function fmtDdMmYyyy(iso){
+  if (!iso) return '';
+  const parts = iso.split('-');
+  if (parts.length !== 3) return '';
+  const [y, m, d] = parts;
+  return `${d}/${m}/${y}`;
 }
 
 function todayIso(){
@@ -159,6 +172,8 @@ function render(){
   CURRENCY_IDS.forEach(id => {
     const row = document.querySelector(`[data-item="${id}"]`);
     if(row) row.classList.toggle('locked', !!locks[id]);
+    const fmtEl = document.querySelector(`[data-lockdate-fmt="${id}"]`);
+    if(fmtEl) fmtEl.textContent = locks[id] ? fmtDdMmYyyy(locks[id].chargedOn) : '';
   });
 
   const ilsRateForSplit = rateValue('ils');
@@ -345,7 +360,7 @@ document.addEventListener('input', e => {
   if(e.target.matches('input[type=number]')) { render(); scheduleSave(); }
   if(e.target.matches('[data-lockdate]')){
     const id = e.target.dataset.lockdate;
-    if (locks[id]) { locks[id].chargedOn = e.target.value; scheduleSave(); }
+    if (locks[id]) { locks[id].chargedOn = e.target.value; render(); scheduleSave(); }
   }
 });
 document.addEventListener('change', e => {

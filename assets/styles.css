@@ -257,6 +257,7 @@ select.cur:focus{outline:none;border-color:var(--rojo)}
   border:1.5px solid var(--line);border-radius:var(--radius);
   background:#fff;color:var(--ink);
 }
+.lockdate-fmt{font-family:var(--font-mono);direction:ltr;font-size:11px;color:var(--slate)}
 
 @media(max-width:400px){
   .row{flex-wrap:wrap}
