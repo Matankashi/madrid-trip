@@ -43,11 +43,13 @@
   <div class="rows">
     <div class="row" data-item="flight">
       <div class="txt"><div class="name">טיסה הלוך־חזור תל אביב–מדריד</div><div class="hint">ישירה, נובמבר עונה נמוכה</div></div>
+      <select class="cur" data-cur="flight" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
       <input type="number" data-in="flight" value="330" min="0">
       <div class="amt" data-amt="flight"></div>
     </div>
     <div class="row" data-item="airport">
       <div class="txt"><div class="name">נמל תעופה ↔ העיר</div><div class="hint">מטרו ≈ €12 לשני הכיוונים · מונית ≈ €66</div></div>
+      <select class="cur" data-cur="airport" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
       <input type="number" data-in="airport" value="12" min="0">
       <div class="amt" data-amt="airport"></div>
     </div>
@@ -57,6 +59,7 @@
   <div class="rows">
     <div class="row" data-item="nightly">
       <div class="txt"><div class="name">מחיר ללילה</div><div class="hint">מלסניה / צ'מברי / לה לטינה · ×<span data-echo="nights"></span> לילות</div></div>
+      <select class="cur" data-cur="nightly" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
       <input type="number" data-in="nightly" value="95" min="0">
       <div class="amt" data-amt="nightly"></div>
     </div>
@@ -66,6 +69,7 @@
   <div class="rows">
     <div class="row" data-item="daily">
       <div class="txt"><div class="name">הוצאה יומית</div><div class="hint">קפה €2 · menú del día €15 · ערב €25 · ×<span data-echo="days"></span> ימים</div></div>
+      <select class="cur" data-cur="daily" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
       <input type="number" data-in="daily" value="55" min="0">
       <div class="amt" data-amt="daily"></div>
     </div>
@@ -75,18 +79,21 @@
   <div class="rows">
     <div class="row" data-item="barca">
       <div class="txt"><div class="name">אתלטיקו–ברצלונה · 8.11</div><div class="hint">רשמי €120–220 · שוק משני €280–500</div></div>
+      <select class="cur" data-cur="barca" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
       <input type="number" data-in="barca" value="250" min="0">
       <div class="amt" data-amt="barca"></div>
     </div>
     <div class="row" data-item="ucl">
       <button class="tog" data-tog="ucl" aria-pressed="true" aria-label="כלול משחק ליגת אלופות"></button>
       <div class="txt"><div class="name">ליגת האלופות · 3–4.11</div><div class="hint">רק אם ההגרלה תיתן משחק ביתי</div></div>
+      <select class="cur" data-cur="ucl" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
       <input type="number" data-in="ucl" value="70" min="0">
       <div class="amt" data-amt="ucl"></div>
     </div>
     <div class="row" data-item="tour">
       <button class="tog" data-tog="tour" aria-pressed="false" aria-label="כלול סיור אצטדיון"></button>
       <div class="txt"><div class="name">סיור באצטדיון</div><div class="hint">מטרופוליטנו €25 · ברנבאו €35</div></div>
+      <select class="cur" data-cur="tour" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
       <input type="number" data-in="tour" value="25" min="0">
       <div class="amt" data-amt="tour"></div>
     </div>
@@ -96,6 +103,7 @@
   <div class="rows">
     <div class="row" data-item="metro">
       <div class="txt"><div class="name">מטרו ואוטובוסים</div><div class="hint">כרטיסייה 10 נסיעות €12.20 · העיר מאוד הליכתית</div></div>
+      <select class="cur" data-cur="metro" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
       <input type="number" data-in="metro" value="55" min="0">
       <div class="amt" data-amt="metro"></div>
     </div>
@@ -107,6 +115,7 @@
       <button class="tog" data-tog="trip" aria-pressed="true" aria-label="כלול טיולי יום"></button>
       <div class="txt"><div class="name">טולדו / סגוביה / אסקוריאל</div><div class="hint">אוטובוס €11 · רכבת מהירה €27 · כולל כניסות</div></div>
       <input type="number" data-in="tripCount" class="mini" value="2" min="0" max="6" aria-label="מספר טיולי יום">
+      <select class="cur" data-cur="trip" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
       <input type="number" data-in="trip" value="60" min="0">
       <div class="amt" data-amt="trip"></div>
     </div>
@@ -116,6 +125,7 @@
   <div class="rows">
     <div class="row" data-item="museums">
       <div class="txt"><div class="name">פראדו, ריינה סופיה, ארמון</div><div class="hint">לפראדו וריינה סופיה יש שעות חינם בערב</div></div>
+      <select class="cur" data-cur="museums" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
       <input type="number" data-in="museums" value="130" min="0">
       <div class="amt" data-amt="museums"></div>
     </div>
@@ -125,6 +135,7 @@
   <div class="rows">
     <div class="row" data-item="misc">
       <div class="txt"><div class="name">קניות, ביטוח, מה שיצא</div><div class="hint">אל תוריד את זה לאפס</div></div>
+      <select class="cur" data-cur="misc" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
       <input type="number" data-in="misc" value="200" min="0">
       <div class="amt" data-amt="misc"></div>
     </div>
@@ -133,10 +144,18 @@
   <div class="foot">
     <div class="lbl">סה״כ</div>
     <div class="big" id="footEur">€0</div>
-    <div class="rate">
-      <label for="rate">שער €→₪</label>
-      <input type="number" id="rate" class="mini" value="4.05" min="1" max="10" step="0.01">
-      <span id="footIls" style="font-family:'IBM Plex Mono',monospace;direction:ltr"></span>
+    <span id="footIls" class="foot-ils"></span>
+    <div class="rates">
+      <div class="rate">
+        <label for="rateUsd">שער €→$</label>
+        <input type="number" id="rateUsd" class="mini" value="1.08" min="0.1" max="10" step="0.01">
+        <span class="rate-date" id="rateUsdDate"></span>
+      </div>
+      <div class="rate">
+        <label for="rateIls">שער €→₪</label>
+        <input type="number" id="rateIls" class="mini" value="4.05" min="0.1" max="10" step="0.01">
+        <span class="rate-date" id="rateIlsDate"></span>
+      </div>
     </div>
   </div>
 
