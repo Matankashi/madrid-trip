@@ -187,6 +187,7 @@ td.num{font-family:var(--font-mono);direction:ltr;text-align:left;white-space:no
 .split{font-size:13px;color:var(--slate);margin-top:4px}
 .split b{font-family:var(--font-mono);font-weight:600;color:var(--ink)}
 .split .mono{font-family:var(--font-mono);direction:ltr;font-size:11px;color:var(--slate)}
+.compare{font-size:13px;color:var(--slate);margin-top:4px}
 
 .comp{
   display:flex;height:11px;margin-top:18px;

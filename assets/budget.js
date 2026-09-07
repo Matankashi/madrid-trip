@@ -39,11 +39,25 @@ const SYMS = {EUR:'€', USD:'$', ILS:'₪'};
 const LOCK_ICON_CLOSED = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>';
 const LOCK_ICON_OPEN = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg>';
 
+/* אלה נקודות ייחוס קבועות מהתכנון המקורי — לעולם לא נערכות, לא
+   נדרסות, ולא נכתבות ל-Firestore בשום נתיב קוד. עריכה אמיתית קיימת
+   רק בשכבת "מותאם אישית" (customValues/customCurrencies), וזו היחידה
+   שנשמרת. אם מוסיפים דרך חדשה לשנות תקציב בעתיד — היא לא נוגעת כאן. */
 const PRESETS = {
   lean:{flight:230,airport:12,nightly:58,daily:32,barca:140,ucl:45,tour:25,metro:35,trip:30,tripCount:2,museums:55,misc:120},
   mid: {flight:330,airport:12,nightly:95,daily:55,barca:250,ucl:70,tour:25,metro:55,trip:60,tripCount:2,museums:130,misc:200},
   rich:{flight:480,airport:70,nightly:165,daily:95,barca:420,ucl:120,tour:60,metro:130,trip:110,tripCount:2,museums:220,misc:350}
 };
+const TIER_LABELS = {lean:'חסכוני', mid:'מאוזן', rich:'נוח', custom:'מותאם אישית'};
+/* PRESETS הם קבועי קוד בלבד — לעולם לא נקראים/נכתבים ל-Firestore.
+   הנתונים ה"אמיתיים" של המשתמש חיים ב-customValues/customCurrencies
+   (נשמרים תחת custom.values/custom.currencies), ו-tier קובע אם ה-DOM
+   כרגע מציג שכבת מחיר (lean/mid/rich, קריאה בלבד מהקבועים) או custom
+   (העריכה החיה). שורה נעולה מתעלמת לגמרי מהחלפת שכבה — תמיד מוצגת
+   מ-customValues/currencies, ראו applyValuesForTier. */
+let tier = 'mid';
+let customValues = {};
+let customCurrencies = {};
 const GROUPS = [
   {key:'arrive', label:'הגעה',    color:'#0F1E38', items:['flight','airport']},
   {key:'stay',   label:'לינה',    color:'#C4262E', items:['nightly']},
@@ -77,6 +91,23 @@ function currencyOf(id){
   const sel = document.querySelector(`[data-cur="${id}"]`);
   const v = sel && sel.value;
   return (v === 'USD' || v === 'ILS') ? v : 'EUR';
+}
+
+// tripCount אין לו נעילה משלו — הוא שייך לשורת trip.
+function lockOwnerOf(id){
+  return id === 'tripCount' ? 'trip' : id;
+}
+
+// מספר השכבה תמיד מוגדר ביורו. אם השורה כרגע לא ביורו, ממירים לפי
+// השער החי הנוכחי כדי שהמספר המוצג יישאר אומדן סביר במטבע שהמשתמש
+// בחר לשורה הזו — לא דורסים את בחירת המטבע שלו סתם כי לחצו על שכבה.
+function presetAmountForRow(id, tierName){
+  const eurAmount = PRESETS[tierName][id];
+  if (!CURRENCY_IDS.includes(id)) return eurAmount; // tripCount - אין לו מטבע
+  const cur = currencyOf(id);
+  if (cur === 'EUR') return eurAmount;
+  const rate = rateValue(cur === 'USD' ? 'usd' : 'ils');
+  return Math.round(eurAmount * rate * 100) / 100;
 }
 
 function rateValue(key){
@@ -212,16 +243,115 @@ function render(){
 
   $$('[data-echo="nights"]').forEach(e => e.textContent = num($('#nights')));
   $$('[data-echo="days"]').forEach(e => e.textContent = num($('#days')));
+
+  const compareEl = $('#tierCompare');
+  if (compareEl) {
+    if (tier === 'custom') {
+      compareEl.hidden = false;
+      compareEl.textContent = buildTierCompareText(grand);
+    } else {
+      compareEl.hidden = true;
+    }
+  }
 }
 
-function applyTier(t){
-  const p = PRESETS[t];
-  Object.entries(p).forEach(([k, v]) => {
-    const inp = document.querySelector(`[data-in="${k}"]`);
-    if(inp) inp.value = v;
+/* סך "מה היה עולה הטיול הזה בשכבת מחיר X" — לא הסכום השמור של השכבה
+   (אין כזה, PRESETS הם קבועים), אלא חישוב על-פי אותם ימים/לילות/
+   toggles כמו הסכום האמיתי, כדי שההשוואה תהיה הוגנת: שורה שכובתה
+   (toggle כבוי) לא נכנסת גם כאן, ושורה נעולה תורמת את הסכום הקפוא
+   האמיתי שלה (זהה בכל שלוש השכבות) ולא את מחיר הייחוס של השכבה —
+   אי אפשר "לתמחר מחדש" חיוב שכבר קרה. */
+function presetTotalEur(tierName){
+  const preset = PRESETS[tierName];
+  let total = 0;
+  CURRENCY_IDS.forEach(id => {
+    if (id in toggles && !toggles[id]) return;
+    if (locks[id]) { total += lineValueEur(id); return; }
+    let amount = preset[id];
+    if (id === 'nightly') amount *= num($('#nights'));
+    if (id === 'daily')   amount *= num($('#days'));
+    if (id === 'trip')    amount *= preset.tripCount;
+    total += amount;
   });
-  $$('.tier').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tier === t)));
+  return total;
+}
+
+function buildTierCompareText(grand){
+  const totals = ['lean','mid','rich'].map(t => ({t, label: TIER_LABELS[t], total: presetTotalEur(t)}));
+  totals.sort((a, b) => a.total - b.total);
+  const lo = totals[0], hi = totals[totals.length - 1];
+
+  if (grand < lo.total) {
+    return `${eur(grand)} — מתחת ל${lo.label} (${eur(lo.total)}), בפער של ${eur(lo.total - grand)}`;
+  }
+  if (grand > hi.total) {
+    return `${eur(grand)} — מעל ${hi.label} (${eur(hi.total)}), בפער של ${eur(grand - hi.total)}`;
+  }
+  for (let i = 0; i < totals.length - 1; i++) {
+    const a = totals[i], b = totals[i + 1];
+    if (grand >= a.total && grand <= b.total) {
+      const gapA = grand - a.total, gapB = b.total - grand;
+      const nearer = gapA <= gapB ? a : b;
+      const gap = Math.round(Math.min(gapA, gapB));
+      if (gap === 0) return `${eur(grand)} — בדיוק כמו ${nearer.label} (${eur(nearer.total)})`;
+      return `${eur(grand)} — בין ${b.label} (${eur(b.total)}) ל-${a.label} (${eur(a.total)}), קרוב יותר ל${nearer.label} ב-${eur(gap)}`;
+    }
+  }
+  return eur(grand);
+}
+
+function renderTierButtons(){
+  $$('.tier').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tier === tier)));
+}
+
+/* מציגה בכל שדה או את מחיר הייחוס של השכבה t (מומר למטבע שהמשתמש
+   כבר בחר לשורה) או את custom — לפי t — אבל שורה נעולה תמיד מציגה
+   את custom שלה, בלי קשר ל-t, כי החלפת שכבה לא נוגעת בשורות נעולות
+   בכלל. days/nights הם גלובליים ולא חלק מאף שכבה, אז תמיד מ-custom. */
+function applyValuesForTier(t){
+  FIELD_IDS.forEach(id => {
+    const el = document.querySelector(`[data-in="${id}"]`);
+    if (!el) return;
+    if (locks[lockOwnerOf(id)]) {
+      el.value = customValues[id] !== undefined ? customValues[id] : defaults.values[id];
+      return;
+    }
+    if (t === 'custom') {
+      el.value = customValues[id] !== undefined ? customValues[id] : defaults.values[id];
+    } else if (id in PRESETS[t]) {
+      el.value = presetAmountForRow(id, t);
+    }
+  });
+  GLOBAL_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = customValues[id] !== undefined ? customValues[id] : defaults.values[id];
+  });
+  CURRENCY_IDS.forEach(id => {
+    const isLocked = !!locks[id];
+    if (isLocked || t === 'custom') {
+      const sel = document.querySelector(`[data-cur="${id}"]`);
+      if (sel) sel.value = (customCurrencies[id] === 'USD' || customCurrencies[id] === 'ILS') ? customCurrencies[id] : 'EUR';
+    }
+    // t הוא שכבת מחיר ושורה פתוחה: לא נוגעים בבורר המטבע בכלל —
+    // מחיר הייחוס כבר הומר למטבע הקיים ב-presetAmountForRow.
+  });
+}
+
+function applyTier(target){
+  if (target === tier) return;
+  if (target !== 'custom' && tier === 'custom') {
+    const ok = confirm(`החלפה ל"${TIER_LABELS[target]}" תחליף את הנתונים המותאמים אישית שלך בשורות הפתוחות (לא נעולות). להמשיך?`);
+    if (!ok) return;
+    FIELD_IDS.forEach(id => {
+      if (locks[lockOwnerOf(id)]) return;
+      customValues[id] = String(presetAmountForRow(id, target));
+    });
+  }
+  tier = target;
+  applyValuesForTier(tier);
+  renderTierButtons();
   render();
+  scheduleSave();
 }
 
 // ברירות המחדל שכבר ב-HTML, נלכדות לפני שכל נתון שמור נטען — הן
@@ -231,16 +361,28 @@ const defaults = {values: {}, toggles: Object.assign({}, toggles)};
 FIELD_IDS.forEach(id => { const el = $(`[data-in="${id}"]`); if (el) defaults.values[id] = el.value; });
 GLOBAL_IDS.forEach(id => { const el = $(`#${id}`); if (el) defaults.values[id] = el.value; });
 
+/* מסנכרן את customValues/currencies מה-DOM: תמיד עבור שורה נעולה
+   (היא לעולם מציגה custom, בלי קשר לשכבה), ועבור GLOBAL_IDS (ימים/
+   לילות אינם שייכים לאף שכבה) — ומעבר לזה, רק כשtier==='custom',
+   כי שכבת מחיר אין לה מה "לשמור" (היא קבועה בקוד). זה מה שמבטיח את
+   כלל 5: רק custom נשמר, presets לא נכתבים ל-Firestore בכלל. */
 function getState(){
-  const values = {};
-  FIELD_IDS.forEach(id => { const el = $(`[data-in="${id}"]`); if (el) values[id] = el.value; });
-  GLOBAL_IDS.forEach(id => { const el = $(`#${id}`); if (el) values[id] = el.value; });
-  const currencies = {};
-  CURRENCY_IDS.forEach(id => { currencies[id] = currencyOf(id); });
+  GLOBAL_IDS.forEach(id => { const el = $(`#${id}`); if (el) customValues[id] = el.value; });
+  FIELD_IDS.forEach(id => {
+    if (tier === 'custom' || locks[lockOwnerOf(id)]) {
+      const el = $(`[data-in="${id}"]`);
+      if (el) customValues[id] = el.value;
+    }
+  });
+  CURRENCY_IDS.forEach(id => {
+    if (tier === 'custom' || locks[id]) customCurrencies[id] = currencyOf(id);
+  });
   const locksOut = {};
   Object.keys(locks).forEach(id => { locksOut[id] = Object.assign({}, locks[id]); });
   return {
-    values, toggles: Object.assign({}, toggles), currencies, locks: locksOut,
+    tier,
+    custom: {values: Object.assign({}, customValues), currencies: Object.assign({}, customCurrencies)},
+    toggles: Object.assign({}, toggles), locks: locksOut,
     rates: {
       usd: {value: $('#rateUsd') ? $('#rateUsd').value : '1.08', updatedAt: rateMeta.usd},
       ils: {value: $('#rateIls') ? $('#rateIls').value : '4.05', updatedAt: rateMeta.ils}
@@ -249,23 +391,27 @@ function getState(){
 }
 
 function applyState(data){
-  const values = (data && data.values) || {};
   const savedToggles = (data && data.toggles) || {};
-  const savedCurrencies = (data && data.currencies) || {};
   const savedRates = (data && data.rates) || {};
-  const legacyRate = data && data.values && data.values.rate; // גרסה ישנה: שדה שער יחיד תחת values
-  FIELD_IDS.forEach(id => {
-    const el = $(`[data-in="${id}"]`);
-    if (el) el.value = values[id] !== undefined ? values[id] : defaults.values[id];
-  });
-  GLOBAL_IDS.forEach(id => {
-    const el = $(`#${id}`);
-    if (el) el.value = values[id] !== undefined ? values[id] : defaults.values[id];
-  });
-  CURRENCY_IDS.forEach(id => {
-    const sel = document.querySelector(`[data-cur="${id}"]`);
-    if (sel) sel.value = (savedCurrencies[id] === 'USD' || savedCurrencies[id] === 'ILS') ? savedCurrencies[id] : 'EUR';
-  });
+  const legacyRate = data && data.values && data.values.rate; // גרסה ישנה מאוד: שדה שער יחיד תחת values
+
+  if (data && data.custom) {
+    customValues = Object.assign({}, data.custom.values);
+    customCurrencies = Object.assign({}, data.custom.currencies);
+    tier = ['lean', 'mid', 'rich', 'custom'].includes(data.tier) ? data.tier : 'custom';
+  } else if (data && data.values) {
+    // מסמך משכבר גרסה (v1.2–v1.4, לפני שכבות): values/currencies ברמה
+    // עליונה הם בעצם המספרים המותאמים אישית — אין דרך לדעת אם הם
+    // תואמים בטעות לשכבה כלשהי, אז ברירת המחדל הבטוחה היא custom.
+    customValues = Object.assign({}, data.values);
+    customCurrencies = Object.assign({}, data.currencies || {});
+    tier = 'custom';
+  } else {
+    customValues = Object.assign({}, defaults.values);
+    customCurrencies = {};
+    tier = 'mid';
+  }
+
   const savedLocks = (data && data.locks) || {};
   locks = {};
   CURRENCY_IDS.forEach(id => {
@@ -284,6 +430,10 @@ function applyState(data){
       setRowLocked(id, false);
     }
   });
+
+  applyValuesForTier(tier);
+  renderTierButtons();
+
   // שער USD: אין ערך ישן להעביר — ברירת המחדל שכבר ב-HTML (1.08) עם תאריך לא ידוע.
   if (savedRates.usd && savedRates.usd.value !== undefined) {
     $('#rateUsd').value = savedRates.usd.value;
@@ -337,7 +487,7 @@ function scheduleSave(){
   }, DEBOUNCE_MS);
 }
 
-$$('.tier').forEach(b => b.addEventListener('click', () => { applyTier(b.dataset.tier); scheduleSave(); }));
+$$('.tier').forEach(b => b.addEventListener('click', () => applyTier(b.dataset.tier)));
 $$('.tog').forEach(b => b.addEventListener('click', () => {
   const k = b.dataset.tog;
   toggles[k] = !toggles[k];
@@ -348,6 +498,14 @@ $$('.tog').forEach(b => b.addEventListener('click', () => {
 document.addEventListener('input', e => {
   if(e.target.id === 'rateUsd') rateMeta.usd = todayIso();
   if(e.target.id === 'rateIls') rateMeta.ils = todayIso();
+  // עריכת שדה תקציב/ימים/לילות בזמן ששכבת מחיר פעילה עוברת אוטומטית
+  // ל-custom, עם הערכים הנוכחיים (שכבה + העריכה הזו) כנקודת פתיחה —
+  // ה-DOM כבר מכיל את הערך החדש ברגע שאירוע ה-input יורה, אז זה
+  // בדיוק מה ש-getState/render יתפסו ברגע שtier=='custom'.
+  if(e.target.matches('[data-in], #days, #nights') && tier !== 'custom'){
+    tier = 'custom';
+    renderTierButtons();
+  }
   if(e.target.matches('input[type=number]')) { render(); scheduleSave(); }
   if(e.target.matches('[data-lockdate]')){
     const id = e.target.dataset.lockdate;
@@ -355,7 +513,11 @@ document.addEventListener('input', e => {
   }
 });
 document.addEventListener('change', e => {
-  if(e.target.matches('select.cur')) { render(); scheduleSave(); }
+  if(e.target.matches('select.cur')) {
+    if (tier !== 'custom') { tier = 'custom'; renderTierButtons(); }
+    render();
+    scheduleSave();
+  }
 });
 document.addEventListener('click', e => {
   const btn = e.target.closest('[data-lockbtn]');
