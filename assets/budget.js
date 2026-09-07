@@ -49,6 +49,16 @@ const GROUPS = [
   {key:'misc',   label:'רזרבה',   color:'#A9A497', items:['misc']}
 ];
 const toggles = {ucl:true, tour:false, trip:true};
+/* locks: שורות שכבר שולמו וחויבו בפועל. מפתח = id, קיים רק לשורות
+   נעולות (חסר = פתוחה, אותו דפוס כמו currencies/rates). כל ערך
+   {amount, currency, rate, chargedOn} הוא תמונת מצב קפואה שנלכדת
+   ברגע הנעילה: amount הוא הסכום המלא של השורה (כולל כפל לילות/ימים/
+   מספר טיולים אם רלוונטי, לא מחיר ליחידה), rate הוא שער ההמרה בו
+   השתמשו באותו רגע (1 אם המטבע כבר EUR), ו-chargedOn תאריך שהמשתמש
+   יכול לערוך. lineValueNative/lineValueEur קוראות מכאן במקום מהשדות
+   החיים כשיש נעילה — כך ששינוי שער או עריכת ימים/לילות אחרי הנעילה
+   לא זז את הסכום הנעול אף לא אגורה. */
+let locks = {};
 const $  = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const num = el => { const v = parseFloat(el.value); return isNaN(v) || v < 0 ? 0 : v; };
@@ -82,10 +92,29 @@ function todayIso(){
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
 
+function setRowLocked(id, isLocked){
+  const row = document.querySelector(`[data-item="${id}"]`);
+  const amountInput = document.querySelector(`[data-in="${id}"]`);
+  const curSelect = document.querySelector(`[data-cur="${id}"]`);
+  const lockBtn = document.querySelector(`[data-lockbtn="${id}"]`);
+  const dateWrap = document.querySelector(`[data-lockdatewrap="${id}"]`);
+  const tripCountInput = id === 'trip' ? document.querySelector('[data-in="tripCount"]') : null;
+  if (row) row.classList.toggle('locked', isLocked);
+  if (amountInput) amountInput.disabled = isLocked;
+  if (curSelect) curSelect.disabled = isLocked;
+  if (tripCountInput) tripCountInput.disabled = isLocked;
+  if (lockBtn) {
+    lockBtn.setAttribute('aria-pressed', String(isLocked));
+    lockBtn.textContent = isLocked ? '🔒' : '🔓';
+  }
+  if (dateWrap) dateWrap.hidden = !isLocked;
+}
+
 function lineValueNative(id){
+  if(id in toggles && !toggles[id]) return 0;
+  if(locks[id]) return Number(locks[id].amount) || 0;
   const inp = document.querySelector(`[data-in="${id}"]`);
   if(!inp) return 0;
-  if(id in toggles && !toggles[id]) return 0;
   const v = num(inp);
   if(id === 'nightly') return v * num($('#nights'));
   if(id === 'daily')   return v * num($('#days'));
@@ -94,6 +123,11 @@ function lineValueNative(id){
 }
 
 function lineValueEur(id){
+  if(id in toggles && !toggles[id]) return 0;
+  if(locks[id]){
+    const rate = Number(locks[id].rate) || 1;
+    return (Number(locks[id].amount) || 0) / rate;
+  }
   const native = lineValueNative(id);
   const cur = currencyOf(id);
   if (cur === 'USD') return native / rateValue('usd');
@@ -103,7 +137,7 @@ function lineValueEur(id){
 
 function render(){
   const totals = {};
-  let grand = 0;
+  let grand = 0, paidEur = 0, projEur = 0;
   GROUPS.forEach(g => {
     let sum = 0;
     g.items.forEach(id => {
@@ -111,6 +145,7 @@ function render(){
       const cell = document.querySelector(`[data-amt="${id}"]`);
       if(cell) cell.textContent = fmtMoney(lineValueNative(id), currencyOf(id));
       sum += vEur;
+      if (locks[id]) paidEur += vEur; else projEur += vEur;
     });
     totals[g.key] = sum;
     grand += sum;
@@ -120,6 +155,17 @@ function render(){
     const row = document.querySelector(`[data-item="${id}"]`);
     if(row) row.classList.toggle('off', !toggles[id]);
   });
+
+  CURRENCY_IDS.forEach(id => {
+    const row = document.querySelector(`[data-item="${id}"]`);
+    if(row) row.classList.toggle('locked', !!locks[id]);
+  });
+
+  const ilsRateForSplit = rateValue('ils');
+  $('#paidEur').textContent = eur(paidEur);
+  $('#projEur').textContent = eur(projEur);
+  $('#paidIls').textContent = '₪' + Math.round(paidEur * ilsRateForSplit).toLocaleString('en-US');
+  $('#projIls').textContent = '₪' + Math.round(projEur * ilsRateForSplit).toLocaleString('en-US');
 
   const days = Math.max(1, num($('#days')));
   const core = lineValueEur('nightly') + lineValueEur('daily');
@@ -185,8 +231,10 @@ function getState(){
   GLOBAL_IDS.forEach(id => { const el = $(`#${id}`); if (el) values[id] = el.value; });
   const currencies = {};
   CURRENCY_IDS.forEach(id => { currencies[id] = currencyOf(id); });
+  const locksOut = {};
+  Object.keys(locks).forEach(id => { locksOut[id] = Object.assign({}, locks[id]); });
   return {
-    values, toggles: Object.assign({}, toggles), currencies,
+    values, toggles: Object.assign({}, toggles), currencies, locks: locksOut,
     rates: {
       usd: {value: $('#rateUsd') ? $('#rateUsd').value : '1.08', updatedAt: rateMeta.usd},
       ils: {value: $('#rateIls') ? $('#rateIls').value : '4.05', updatedAt: rateMeta.ils}
@@ -211,6 +259,24 @@ function applyState(data){
   CURRENCY_IDS.forEach(id => {
     const sel = document.querySelector(`[data-cur="${id}"]`);
     if (sel) sel.value = (savedCurrencies[id] === 'USD' || savedCurrencies[id] === 'ILS') ? savedCurrencies[id] : 'EUR';
+  });
+  const savedLocks = (data && data.locks) || {};
+  locks = {};
+  CURRENCY_IDS.forEach(id => {
+    const saved = savedLocks[id];
+    if (saved && saved.amount !== undefined) {
+      locks[id] = {
+        amount: saved.amount,
+        currency: (saved.currency === 'USD' || saved.currency === 'ILS') ? saved.currency : 'EUR',
+        rate: Number(saved.rate) || 1,
+        chargedOn: saved.chargedOn || '' // חסר בביטחון — לא שובר את הטעינה, רק מוצג ריק
+      };
+      setRowLocked(id, true);
+      const dateInput = document.querySelector(`[data-lockdate="${id}"]`);
+      if (dateInput) dateInput.value = locks[id].chargedOn;
+    } else {
+      setRowLocked(id, false);
+    }
   });
   // שער USD: אין ערך ישן להעביר — ברירת המחדל שכבר ב-HTML (1.08) עם תאריך לא ידוע.
   if (savedRates.usd && savedRates.usd.value !== undefined) {
@@ -277,10 +343,62 @@ document.addEventListener('input', e => {
   if(e.target.id === 'rateUsd') rateMeta.usd = todayIso();
   if(e.target.id === 'rateIls') rateMeta.ils = todayIso();
   if(e.target.matches('input[type=number]')) { render(); scheduleSave(); }
+  if(e.target.matches('[data-lockdate]')){
+    const id = e.target.dataset.lockdate;
+    if (locks[id]) { locks[id].chargedOn = e.target.value; scheduleSave(); }
+  }
 });
 document.addEventListener('change', e => {
   if(e.target.matches('select.cur')) { render(); scheduleSave(); }
 });
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-lockbtn]');
+  if (!btn) return;
+  const id = btn.dataset.lockbtn;
+  if (locks[id]) {
+    delete locks[id];
+    setRowLocked(id, false);
+  } else {
+    const currency = currencyOf(id);
+    const amount = lineValueNative(id);
+    const rate = currency === 'EUR' ? 1 : rateValue(currency === 'USD' ? 'usd' : 'ils');
+    const chargedOn = todayIso();
+    locks[id] = {amount: String(amount), currency, rate, chargedOn};
+    setRowLocked(id, true);
+    const dateInput = document.querySelector(`[data-lockdate="${id}"]`);
+    if (dateInput) dateInput.value = chargedOn;
+  }
+  render();
+  scheduleSave();
+});
+
+function refreshRate(key){
+  const btn = document.querySelector(`[data-refresh="${key}"]`);
+  const errEl = document.getElementById(key === 'usd' ? 'rateUsdError' : 'rateIlsError');
+  const inputEl = key === 'usd' ? $('#rateUsd') : $('#rateIls');
+  if (errEl) errEl.hidden = true;
+  if (btn) { btn.disabled = true; btn.textContent = '...מעדכן'; }
+  fetch('https://open.er-api.com/v6/latest/EUR')
+    .then(res => { if (!res.ok) throw new Error('http ' + res.status); return res.json(); })
+    .then(data => {
+      if (data.result !== 'success') throw new Error('api result: ' + data.result);
+      const rate = key === 'usd' ? data.rates && data.rates.USD : data.rates && data.rates.ILS;
+      if (!(rate > 0)) throw new Error('missing rate in response');
+      inputEl.value = Math.round(rate * 10000) / 10000;
+      rateMeta[key] = todayIso();
+      render();
+      scheduleSave();
+    })
+    .catch(err => {
+      // השדה והתאריך נשארים כמו שהיו — כשל שקט כאן היה נראה כמו שער עדכני
+      console.error('madrid-trip: rate refresh failed', key, err);
+      if (errEl) { errEl.textContent = 'עדכון השער נכשל — נשאר השער האחרון שנשמר'; errEl.hidden = false; }
+    })
+    .finally(() => {
+      if (btn) { btn.disabled = false; btn.textContent = '↻ עדכן'; }
+    });
+}
+$$('.refresh').forEach(b => b.addEventListener('click', () => refreshRate(b.dataset.refresh)));
 
 render();
 
