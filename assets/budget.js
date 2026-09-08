@@ -130,27 +130,15 @@ function todayIso(){
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
 
-function setRowLocked(id, isLocked){
-  const row = document.querySelector(`[data-item="${id}"]`);
-  const amountInput = document.querySelector(`[data-in="${id}"]`);
-  const curSelect = document.querySelector(`[data-cur="${id}"]`);
-  const lockBtn = document.querySelector(`[data-lockbtn="${id}"]`);
-  const dateWrap = document.querySelector(`[data-lockdatewrap="${id}"]`);
-  const tripCountInput = id === 'trip' ? document.querySelector('[data-in="tripCount"]') : null;
-  if (row) row.classList.toggle('locked', isLocked);
-  if (amountInput) amountInput.disabled = isLocked;
-  if (curSelect) curSelect.disabled = isLocked;
-  if (tripCountInput) tripCountInput.disabled = isLocked;
-  if (lockBtn) {
-    lockBtn.setAttribute('aria-pressed', String(isLocked));
-    lockBtn.innerHTML = isLocked ? LOCK_ICON_CLOSED : LOCK_ICON_OPEN;
-  }
-  if (dateWrap) dateWrap.hidden = !isLocked;
+/* נעילה קיימת רק בשכבת custom — בשכבת מחיר קבועה (lean/mid/rich)
+   היא כאילו לא קיימת בכלל: לא בערך המוצג, לא בחישוב, לא בכפתור עצמו. */
+function isLockActive(id){
+  return !!locks[id] && tier === 'custom';
 }
 
 function lineValueNative(id){
   if(id in toggles && !toggles[id]) return 0;
-  if(locks[id]) return Number(locks[id].amount) || 0;
+  if(isLockActive(id)) return Number(locks[id].amount) || 0;
   const inp = document.querySelector(`[data-in="${id}"]`);
   if(!inp) return 0;
   const v = num(inp);
@@ -162,7 +150,7 @@ function lineValueNative(id){
 
 function lineValueEur(id){
   if(id in toggles && !toggles[id]) return 0;
-  if(locks[id]){
+  if(isLockActive(id)){
     const rate = Number(locks[id].rate) || 1;
     return (Number(locks[id].amount) || 0) / rate;
   }
@@ -183,7 +171,7 @@ function render(){
       const cell = document.querySelector(`[data-amt="${id}"]`);
       if(cell) cell.textContent = fmtMoney(lineValueNative(id), currencyOf(id));
       sum += vEur;
-      if (locks[id]) paidEur += vEur; else projEur += vEur;
+      if (isLockActive(id)) paidEur += vEur; else projEur += vEur;
     });
     totals[g.key] = sum;
     grand += sum;
@@ -194,9 +182,27 @@ function render(){
     if(row) row.classList.toggle('off', !toggles[id]);
   });
 
+  // מצב הנעילה מוצג/מיושם רק ב-custom: כפתור המנעול עצמו זמין רק שם
+  // (הוא חסר משמעות בשכבת מחיר קבועה), והשדות נחסמים רק כשהנעילה
+  // בפועל פעילה (isLockActive) — לא סתם כי locks[id] קיים.
   CURRENCY_IDS.forEach(id => {
+    const active = isLockActive(id);
     const row = document.querySelector(`[data-item="${id}"]`);
-    if(row) row.classList.toggle('locked', !!locks[id]);
+    if (row) row.classList.toggle('locked', active);
+    const amountInput = document.querySelector(`[data-in="${id}"]`);
+    const curSelect = document.querySelector(`[data-cur="${id}"]`);
+    const lockBtn = document.querySelector(`[data-lockbtn="${id}"]`);
+    const dateWrap = document.querySelector(`[data-lockdatewrap="${id}"]`);
+    const tripCountInput = id === 'trip' ? document.querySelector('[data-in="tripCount"]') : null;
+    if (amountInput) amountInput.disabled = active;
+    if (curSelect) curSelect.disabled = active;
+    if (tripCountInput) tripCountInput.disabled = active;
+    if (lockBtn) {
+      lockBtn.hidden = tier !== 'custom';
+      lockBtn.setAttribute('aria-pressed', String(!!locks[id]));
+      lockBtn.innerHTML = locks[id] ? LOCK_ICON_CLOSED : LOCK_ICON_OPEN;
+    }
+    if (dateWrap) dateWrap.hidden = !active;
   });
 
   // שורת ייחוס לכל שורה: תמיד ביורו (זה המטבע שבו מוגדרים ה-PRESETS),
@@ -323,18 +329,16 @@ function renderTierButtons(){
   $$('.tier').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tier === tier)));
 }
 
-/* מציגה בכל שדה או את מחיר הייחוס של השכבה t (מומר למטבע שהמשתמש
-   כבר בחר לשורה) או את custom — לפי t — אבל שורה נעולה תמיד מציגה
-   את custom שלה, בלי קשר ל-t, כי החלפת שכבה לא נוגעת בשורות נעולות
-   בכלל. days/nights הם גלובליים ולא חלק מאף שכבה, אז תמיד מ-custom. */
+/* מציגה בכל שדה את מחיר הייחוס של השכבה t (מומר למטבע שהמשתמש כבר
+   בחר לשורה) כש-t היא שכבת מחיר קבועה, או את custom כש-t==='custom'
+   — בלי יוצא מן הכלל. נעילה קיימת רק ב-custom (ראו isLockActive),
+   אז שורה נעולה מוצגת בשכבת מחיר בדיוק כמו שורה פתוחה: מחיר הייחוס
+   שלה, לא הסכום ששולם בפועל. days/nights הם גלובליים ולא חלק מאף
+   שכבה, אז תמיד מ-custom. */
 function applyValuesForTier(t){
   FIELD_IDS.forEach(id => {
     const el = document.querySelector(`[data-in="${id}"]`);
     if (!el) return;
-    if (locks[lockOwnerOf(id)]) {
-      el.value = customValues[id] !== undefined ? customValues[id] : defaults.values[id];
-      return;
-    }
     if (t === 'custom') {
       el.value = customValues[id] !== undefined ? customValues[id] : defaults.values[id];
     } else if (id in PRESETS[t]) {
@@ -346,12 +350,11 @@ function applyValuesForTier(t){
     if (el) el.value = customValues[id] !== undefined ? customValues[id] : defaults.values[id];
   });
   CURRENCY_IDS.forEach(id => {
-    const isLocked = !!locks[id];
-    if (isLocked || t === 'custom') {
+    if (t === 'custom') {
       const sel = document.querySelector(`[data-cur="${id}"]`);
       if (sel) sel.value = (customCurrencies[id] === 'USD' || customCurrencies[id] === 'ILS') ? customCurrencies[id] : 'EUR';
     }
-    // t הוא שכבת מחיר ושורה פתוחה: לא נוגעים בבורר המטבע בכלל —
+    // t הוא שכבת מחיר: לא נוגעים בבורר המטבע בכלל, נעולה או לא —
     // מחיר הייחוס כבר הומר למטבע הקיים ב-presetAmountForRow.
   });
 }
@@ -380,15 +383,16 @@ const defaults = {values: {}, toggles: Object.assign({}, toggles)};
 FIELD_IDS.forEach(id => { const el = $(`[data-in="${id}"]`); if (el) defaults.values[id] = el.value; });
 GLOBAL_IDS.forEach(id => { const el = $(`#${id}`); if (el) defaults.values[id] = el.value; });
 
-/* מסנכרן את customValues/currencies מה-DOM: תמיד עבור שורה נעולה
-   (היא לעולם מציגה custom, בלי קשר לשכבה), ועבור GLOBAL_IDS (ימים/
-   לילות אינם שייכים לאף שכבה) — ומעבר לזה, רק כשtier==='custom',
-   כי שכבת מחיר אין לה מה "לשמור" (היא קבועה בקוד). זה מה שמבטיח את
-   כלל 5: רק custom נשמר, presets לא נכתבים ל-Firestore בכלל. */
+/* מסנכרן את customValues/currencies מה-DOM: תמיד עבור GLOBAL_IDS
+   (ימים/לילות אינם שייכים לאף שכבה), ומעבר לזה רק כש-tier==='custom'
+   — גם עבור שורה נעולה, כי בשכבת מחיר קבועה ה-DOM מציג את מחיר
+   הייחוס של השכבה (לא את custom), ולכתוב אותו לתוך customValues היה
+   דורס את הסכום האמיתי שנעל המשתמש. זה מה שמבטיח את כלל 5: רק custom
+   נשמר, presets לא נכתבים ל-Firestore בכלל. */
 function getState(){
   GLOBAL_IDS.forEach(id => { const el = $(`#${id}`); if (el) customValues[id] = el.value; });
   FIELD_IDS.forEach(id => {
-    if (tier === 'custom' || locks[lockOwnerOf(id)]) {
+    if (tier === 'custom') {
       const el = $(`[data-in="${id}"]`);
       if (el) customValues[id] = el.value;
     }
@@ -446,11 +450,8 @@ function applyState(data){
         rate: Number(saved.rate) || 1,
         chargedOn: saved.chargedOn || '' // חסר בביטחון — לא שובר את הטעינה, רק מוצג ריק
       };
-      setRowLocked(id, true);
       const dateInput = document.querySelector(`[data-lockdate="${id}"]`);
       if (dateInput) dateInput.value = locks[id].chargedOn;
-    } else {
-      setRowLocked(id, false);
     }
   });
 
@@ -550,18 +551,18 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('click', e => {
   const btn = e.target.closest('[data-lockbtn]');
-  if (!btn) return;
+  // הכפתור עצמו מוסתר מחוץ ל-custom (ראו render()), אבל בודקים גם כאן:
+  // נעילה חסרת משמעות בשכבת מחיר קבועה.
+  if (!btn || tier !== 'custom') return;
   const id = btn.dataset.lockbtn;
   if (locks[id]) {
     delete locks[id];
-    setRowLocked(id, false);
   } else {
     const currency = currencyOf(id);
     const amount = lineValueNative(id);
     const rate = currency === 'EUR' ? 1 : rateValue(currency === 'USD' ? 'usd' : 'ils');
     const chargedOn = todayIso();
     locks[id] = {amount: String(amount), currency, rate, chargedOn};
-    setRowLocked(id, true);
     const dateInput = document.querySelector(`[data-lockdate="${id}"]`);
     if (dateInput) dateInput.value = chargedOn;
   }
