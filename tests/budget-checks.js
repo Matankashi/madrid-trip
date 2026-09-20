@@ -12,6 +12,10 @@
         location.reload();                    // then, after it loads:
         const t = await import('/tests/budget-checks.js');
         await t.phaseB();                     // persistence checks + cleanup
+        await t.seed(); location.reload();    // fresh fixture, then after it loads:
+        await t.phaseC();                     // row details, links, edit mode, rename, CSS
+        await t.seedLegacy(); location.reload();   // a v1.10-shaped doc (no userRows/rowMeta)
+        await t.phaseLegacy();                // old documents still load fine
         await t.dropTestDoc();                // deletes budget_test
    Every function returns {passed, failed, failures:[...]}.
 
@@ -54,6 +58,13 @@ const FIXTURE = {
     values: { days: '12', nights: '11', tripCount: '2', flight: '486', airport: '', nightly: '', daily: '', barca: '1053.8', ucl: '', tour: '', metro: '', trip: '', museums: '', shirt: '', scale: '', internet: '', misc: '50', u_t1: '100', u_t2: '20', u_orphan: '999' },
     currencies: { flight: 'ILS', airport: 'EUR', nightly: 'EUR', daily: 'EUR', barca: 'ILS', ucl: 'EUR', tour: 'EUR', metro: 'EUR', trip: 'EUR', museums: 'EUR', shirt: 'EUR', scale: 'EUR', internet: 'EUR', misc: 'EUR', u_t1: 'EUR', u_t2: 'USD', u_orphan: 'EUR' }
   },
+  rowMeta: {
+    flight: { desc: 'אל על · הלוך', url: 'https://example.com/flight', zz_future: 'keep' },
+    barca: { url: 'booking.com/x?y=1' },
+    u_t1: { desc: 'תיאור פנימי', url: 'javascript:alert(1)' },
+    shirt: { desc: 'רק תיאור' },
+    u_orphan: { desc: 'יתום' }
+  },
   toggles: { trip: true, tour: false, ucl: true },
   locks: {
     flight: { amount: '486', currency: 'ILS', rate: 3.5, chargedOn: '2026-09-10' },
@@ -71,6 +82,24 @@ export async function seed() {
   await guard();
   await setDoc(ref(), FIXTURE);
   return 'seeded budget_test';
+}
+
+// the shape written by v1.10 and earlier: no userRows, no rowMeta
+const LEGACY = {
+  tier: 'custom', showTierRefs: true,
+  custom: {
+    values: { days: '12', nights: '11', tripCount: '2', flight: '486', airport: '', nightly: '', daily: '', barca: '1053.8', ucl: '', tour: '', metro: '', trip: '', museums: '', shirt: '', scale: '', internet: '', misc: '' },
+    currencies: { flight: 'ILS', airport: 'EUR', nightly: 'EUR', daily: 'EUR', barca: 'ILS', ucl: 'EUR', tour: 'EUR', metro: 'EUR', trip: 'EUR', museums: 'EUR', shirt: 'EUR', scale: 'EUR', internet: 'EUR', misc: 'EUR' }
+  },
+  toggles: { trip: true, tour: false, ucl: true },
+  locks: { flight: { amount: '486', currency: 'ILS', rate: 3.5, chargedOn: '2026-09-10' } },
+  rates: { usd: { value: '1.1', updatedAt: '2026-09-01' }, ils: { value: '3.5', updatedAt: '2026-09-01' } }
+};
+
+export async function seedLegacy() {
+  await guard();
+  await setDoc(ref(), LEGACY);
+  return 'seeded legacy budget_test';
 }
 
 export async function dropTestDoc() {
@@ -200,5 +229,127 @@ export async function phaseB() {
   q(`[data-delbtn="${id}"]`).click(); await sleep(50); q(`[data-delyes="${id}"]`).click();
   const d2 = await readDoc();
   r.ok('final delete clears everything', !(id in d2.userRows) && !(id in d2.locks) && !(id in d2.custom.values) && !(id in d2.custom.currencies));
+  return r.result();
+}
+
+const vis = el => !!el && el.getClientRects().length > 0;
+const setVal = (el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+const cs = el => getComputedStyle(el).display;
+
+export async function phaseC() {
+  await guard();
+  const r = reporter();
+  // ---- 1. display: links, descriptions, nothing extra when empty
+  const a = q('[data-link-view="flight"]');
+  r.ok('row with a link shows a tappable link', vis(a) && a.getAttribute('href') === 'https://example.com/flight', a && a.getAttribute('href'));
+  r.ok('link opens in a new tab, safely', a.target === '_blank' && /noopener/.test(a.rel) && /noreferrer/.test(a.rel), a.rel);
+  r.ok('link is phone-sized (>= 40px tall)', a.getBoundingClientRect().height >= 40, a.getBoundingClientRect().height);
+  r.ok('link shows the host', /example\.com/.test(a.textContent), a.textContent);
+  r.ok('description shown next to the link', q('[data-desc-view="flight"]').textContent === 'אל על · הלוך' && vis(q('[data-desc-view="flight"]')));
+  const b = q('[data-link-view="barca"]');
+  r.ok('link without a scheme gets https://', vis(b) && b.getAttribute('href') === 'https://booking.com/x?y=1', b && b.getAttribute('href'));
+  const bad = q('[data-link-view="u_t1"]');
+  r.ok('javascript: URL is never rendered as a link', !vis(bad) && !bad.hasAttribute('href'));
+  r.ok('description-only row: text shown, no link', vis(q('[data-desc-view="shirt"]')) && !vis(q('[data-link-view="shirt"]')));
+  r.ok('row with no details shows nothing extra (zero height)', q('[data-meta="airport"]').getBoundingClientRect().height === 0 && !vis(q('[data-desc-view="airport"]')) && !vis(q('[data-link-view="airport"]')) && !vis(q('[data-meta-edit="airport"]')));
+  r.ok('user rows get the same details UI', !!q('[data-meta="u_t1"]') && !!q('[data-desc-in="u_t2"]'));
+
+  // ---- 2. edit mode (custom only)
+  r.ok('edit toggle visible in custom, editors hidden by default', vis(q('#metaToggleWrap')) && !vis(q('[data-meta-edit="airport"]')));
+  q('#metaToggle').click(); await sleep(150);
+  r.ok('toggle on: every row (fixed and user) shows the two inputs', ['airport', 'flight', 'misc', 'u_t1', 'u_t2'].every(id => vis(q(`[data-desc-in="${id}"]`)) && vis(q(`[data-link-in="${id}"]`))));
+  r.ok('inputs hold the saved values', q('[data-desc-in="flight"]').value === 'אל על · הלוך' && q('[data-link-in="barca"]').value === 'booking.com/x?y=1');
+  setVal(q('[data-desc-in="airport"]'), '  מטרו לעיר  ');
+  setVal(q('[data-link-in="airport"]'), 'https://maps.google.com/?q=Atocha');
+  let d = await readDoc();
+  r.ok('description and link persist to Firestore (trimmed)', d.rowMeta.airport && d.rowMeta.airport.desc === 'מטרו לעיר' && d.rowMeta.airport.url === 'https://maps.google.com/?q=Atocha', d.rowMeta.airport);
+  r.ok('new link renders immediately', vis(q('[data-link-view="airport"]')) && q('[data-link-view="airport"]').getAttribute('href').startsWith('https://maps.google.com'));
+  setVal(q('[data-link-in="airport"]'), 'not a url');
+  await sleep(150);
+  r.ok('invalid link: error shown, no link rendered', vis(q('[data-link-err="airport"]')) && !vis(q('[data-link-view="airport"]')) && q('[data-link-in="airport"]').classList.contains('invalid'));
+  d = await readDoc();
+  r.ok('invalid text is kept as typed (nothing lost mid-edit)', d.rowMeta.airport.url === 'not a url');
+  // what counts as a link: only http(s) with a real host and no spaces. Free text must never become a link.
+  const cases = [
+    ['hostel booking', false], ['booking', false], ['javascript:alert(1)', false], ['data:text/html,hi', false],
+    ['ftp://example.com/a', false], ['example.com/a b', false], ['https://', false],
+    ['http://example.com', true], ['HTTPS://Example.COM/x?y=1#z', true], ['www.booking.com/hotel/x', true], ['https://maps.app.goo.gl/abc', true]
+  ];
+  for (const [text, shouldLink] of cases) {
+    setVal(q('[data-link-in="airport"]'), text); await sleep(40);
+    r.ok(`link check ${JSON.stringify(text)} -> ${shouldLink ? 'link' : 'no link'}`, vis(q('[data-link-view="airport"]')) === shouldLink, q('[data-link-view="airport"]').getAttribute('href'));
+  }
+  setVal(q('[data-link-in="airport"]'), 'not a url'); await sleep(40);
+  setVal(q('[data-desc-in="airport"]'), ''); setVal(q('[data-link-in="airport"]'), '');
+  d = await readDoc();
+  r.ok('clearing both removes the entry', !('airport' in d.rowMeta));
+  // locked row: details stay editable, lock untouched
+  const lockBefore = JSON.stringify(Object.fromEntries(Object.entries(d.locks.flight).sort()));
+  setVal(q('[data-desc-in="flight"]'), 'אישור טיסה');
+  d = await readDoc();
+  r.ok('locked row: description editable, lock unchanged', d.rowMeta.flight.desc === 'אישור טיסה' && JSON.stringify(Object.fromEntries(Object.entries(d.locks.flight).sort())) === lockBefore);
+  r.ok('unknown field inside a rowMeta entry preserved', d.rowMeta.flight.zz_future === 'keep');
+  r.ok('orphan rowMeta entry preserved', d.rowMeta.u_orphan && d.rowMeta.u_orphan.desc === 'יתום');
+
+  // ---- 3. preset tiers: read-only, links still usable
+  q('.tier[data-tier="mid"]').click(); await sleep(250);
+  r.ok('preset tier: edit toggle and editors hidden', !vis(q('#metaToggleWrap')) && !vis(q('[data-meta-edit="flight"]')));
+  r.ok('preset tier: existing link still shown', vis(q('[data-link-view="flight"]')));
+  r.ok('preset tier: lock buttons hidden (CSS hidden-attribute fix)', [...document.querySelectorAll('[data-lockbtn]')].every(x => cs(x) === 'none'));
+  r.ok('preset tier: "show reference values" checkbox hidden', cs(q('#refToggleWrap')) === 'none');
+  r.ok('preset tier: rename/delete UI hidden', !vis(q('[data-delwrap="u_t1"]')) || cs(q('[data-delwrap="u_t1"]')) === 'none');
+  q('.tier[data-tier="custom"]').click(); await sleep(250);
+  r.ok('custom: lock buttons and reference toggle visible again', vis(q('[data-lockbtn="flight"]')) && vis(q('#refToggleWrap')));
+
+  // ---- 4. the original bug: charge-date field on UNLOCKED rows
+  r.ok('unlocked row: charge-date field hidden', cs(q('[data-lockdatewrap="airport"]')) === 'none' && !vis(q('[data-lockdate="airport"]')));
+  r.ok('locked row: charge-date field visible', vis(q('[data-lockdate="flight"]')));
+
+  // ---- 5. rename (user rows only)
+  r.ok('fixed rows have no rename control', !q('[data-renbtn="flight"]'));
+  const before = (await readDoc()).userRows.u_t1;
+  q('[data-renbtn="u_t1"]').click(); await sleep(100);
+  const rf = q('[data-renform="u_t1"]');
+  r.ok('rename form opens with the current name', !rf.hidden && rf.querySelector('input').value === 'בדיקה 1');
+  q('[data-ren-in="u_t1"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await sleep(100);
+  r.ok('Escape cancels', rf.hidden && q('[data-item="u_t1"] .name').textContent === 'בדיקה 1');
+  q('[data-renbtn="u_t1"]').click(); await sleep(50);
+  rf.querySelector('input').value = '   '; rf.requestSubmit(); await sleep(100);
+  r.ok('empty name is ignored', q('[data-item="u_t1"] .name').textContent === 'בדיקה 1' && rf.hidden);
+  q('[data-renbtn="u_t1"]').click(); await sleep(50);
+  rf.querySelector('input').value = '  מלון <i>חדש</i>  '; rf.requestSubmit();
+  d = await readDoc();
+  const nm = q('[data-item="u_t1"] .name');
+  r.ok('renamed: trimmed, shown as text not HTML', nm.textContent === 'מלון <i>חדש</i>' && !nm.querySelector('i'));
+  r.ok('rename persisted; group, createdAt, value, currency untouched', d.userRows.u_t1.label === 'מלון <i>חדש</i>' && d.userRows.u_t1.group === before.group && d.userRows.u_t1.createdAt === before.createdAt && d.custom.values.u_t1 === '100' && d.custom.currencies.u_t1 === 'EUR');
+  r.ok('rename kept the details', d.rowMeta.u_t1 && d.rowMeta.u_t1.desc === 'תיאור פנימי');
+  q('[data-renbtn="u_t2"]').click(); await sleep(50);
+  q('[data-renform="u_t2"]').querySelector('input').value = 'נעולה'; q('[data-renform="u_t2"]').requestSubmit();
+  d = await readDoc();
+  r.ok('locked user row can be renamed; its lock is untouched', d.userRows.u_t2.label === 'נעולה' && d.locks.u_t2.amount === '20' && d.locks.u_t2.currency === 'USD');
+
+  // ---- 6. deleting a user row also removes its details
+  q('[data-delbtn="u_t1"]').click(); await sleep(50); q('[data-delyes="u_t1"]').click();
+  d = await readDoc();
+  r.ok('delete removed the row and its rowMeta entry together', !('u_t1' in d.userRows) && !('u_t1' in d.rowMeta));
+  r.ok('no NaN anywhere', !/NaN/.test(document.body.innerText));
+  return r.result();
+}
+
+export async function phaseLegacy() {
+  await guard();
+  const r = reporter();
+  r.ok('legacy doc rendered (fixed rows present, none of the new data)', !!q('[data-item="flight"]') && !document.querySelector('[data-user-row]'));
+  r.ok('legacy doc: no details shown anywhere', ![...document.querySelectorAll('[data-desc-view],[data-link-view]')].some(vis));
+  r.ok('legacy doc: total is right (flight 486/3.5 + barca 1053.8/3.5)', Math.abs(totalNum() - Math.round(486 / 3.5 + 1053.8 / 3.5)) <= 1, q('#totEur').textContent);
+  r.ok('legacy doc: no NaN', !/NaN/.test(document.body.innerText));
+  q('[data-tog="tour"]').click(); await sleep(150); q('[data-tog="tour"]').click();
+  const d = await readDoc();
+  r.ok('legacy doc after a save: empty userRows/rowMeta, nothing else invented', Object.keys(d.userRows || {}).length === 0 && Object.keys(d.rowMeta || {}).length === 0);
+  // a first detail on a legacy doc
+  q('#metaToggle').click(); await sleep(100);
+  setVal(q('[data-link-in="barca"]'), 'https://example.com/ticket');
+  const d2 = await readDoc();
+  r.ok('first link on a legacy doc persists', d2.rowMeta.barca && d2.rowMeta.barca.url === 'https://example.com/ticket');
   return r.result();
 }

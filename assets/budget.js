@@ -65,6 +65,16 @@ const PLANLESS_FIXED_ROWS = FIXED_FIELD_IDS.filter(id => id !== 'tripCount' && [
    המטבע והנעילה שלהן נשמרים באותם מקומות של שורה קבועה (custom.values[id],
    custom.currencies[id], locks[id]), כך שכל לוגיקת הסכומים/נעילה עובדת בלי
    שינוי. ה-id תמיד מתחיל ב-u_, ולכן אף פעם לא מתנגש ב-id של PRESETS. */
+/* תיאור וקישור לכל שורה (קבועה או משתמש): rowMeta[id] = {desc, url}.
+   מפתח קיים רק לשורה שיש לה לפחות אחד מהם (חסר = אין), אותו דפוס כמו
+   locks/currencies. url נשמר כפי שהוקלד, וההפיכה לקישור לחיץ (normalizeUrl)
+   נעשית רק בזמן הצגה — כך שעריכה באמצע הקלדה לא מוחקת כלום, וערך לא תקין
+   פשוט לא מוצג כקישור. ערכים של id שאין לו שורה כרגע נשמרים כמות שהם.
+   metaEditing הוא מצב תצוגה בלבד (לא נשמר). */
+let rowMeta = {};
+let metaEditing = false;
+const DESC_MAX = 200;
+const URL_MAX = 2000;
 let userRows = {};
 const isUserRow = id => Object.prototype.hasOwnProperty.call(userRows, id);
 const isReserveRow = id => isUserRow(id) || PLANLESS_FIXED_ROWS.includes(id);
@@ -113,7 +123,7 @@ let locks = {};
    לגרסה הזו שורה בשבילו (נעילה היא תיעוד של כסף שהוצא בפועל). ערכים
    ומטבעות של id לא מוכר כבר שורדים לבד, כי customValues/customCurrencies
    מועתקים במלואם. שדות מוכרים תמיד גוברים על הלא-מוכרים. */
-const KNOWN_TOP_FIELDS = ['tier','showTierRefs','custom','toggles','locks','rates','values','currencies','userRows'];
+const KNOWN_TOP_FIELDS = ['tier','showTierRefs','custom','toggles','locks','rates','values','currencies','userRows','rowMeta'];
 let foreignTop = {};
 let foreignCustom = {};
 let foreignLocks = {};
@@ -353,6 +363,38 @@ function render(){
     if (delWrap) delWrap.style.display = readOnly ? 'none' : '';
   });
 
+  // תיאור וקישור: תצוגה בכל שכבה (אלה פרטי ההוצאה, לא חלק מהתכנון), עריכה
+  // רק ב-custom ורק כשמתג העריכה דלוק — אחרת שורה בלי פרטים לא מציגה כלום.
+  const metaEditingNow = tier === 'custom' && metaEditing;
+  const metaToggleWrap = $('#metaToggleWrap');
+  if (metaToggleWrap) metaToggleWrap.hidden = tier !== 'custom';
+  CURRENCY_IDS.forEach(id => {
+    const m = rowMeta[id] || {};
+    const desc = (m.desc || '').trim();
+    const href = normalizeUrl(m.url);
+    const dEl = document.querySelector(`[data-desc-view="${id}"]`);
+    if (dEl) { dEl.textContent = desc; dEl.hidden = !desc; }
+    const lEl = document.querySelector(`[data-link-view="${id}"]`);
+    if (lEl) {
+      lEl.hidden = !href;
+      if (href) {
+        const label = linkLabel(href);
+        lEl.href = href;
+        lEl.querySelector('.rowlink-host').textContent = label;
+        lEl.setAttribute('aria-label', 'פתח קישור: ' + label);
+      } else {
+        lEl.removeAttribute('href');
+      }
+    }
+    const ed = document.querySelector(`[data-meta-edit="${id}"]`);
+    if (ed) ed.hidden = !metaEditingNow;
+    const err = document.querySelector(`[data-link-err="${id}"]`);
+    const linkIn = document.querySelector(`[data-link-in="${id}"]`);
+    const bad = metaEditingNow && !!(m.url || '').trim() && !href;
+    if (err) err.hidden = !bad;
+    if (linkIn) linkIn.classList.toggle('invalid', bad);
+  });
+
   // כמה מהרזרבה נוצל: misc + כל השורות שנספרות מולה, מול הרזרבה בכל שכבה.
   const reserveEl = $('#reserveLine');
   if (reserveEl) {
@@ -467,6 +509,81 @@ const defaults = {values: {}, toggles: Object.assign({}, toggles)};
 FIELD_IDS.forEach(id => { const el = $(`[data-in="${id}"]`); if (el) defaults.values[id] = el.value; });
 GLOBAL_IDS.forEach(id => { const el = $(`#${id}`); if (el) defaults.values[id] = el.value; });
 
+/* ---- תיאור וקישור ---- */
+/* רק http/https הופכים לקישור: javascript:/data: וכל סכמה אחרת לא מוצגים
+   בכלל. בלי סכמה ("booking.com/x") מוסיפים https://. ערך שלא מתפרש
+   כ-URL הוא קלט משתמש צפוי (לא כשל) — הוא מסומן כלא-תקין בעורך במקום
+   להיזרק ללוג בכל הקשה. */
+function normalizeUrl(raw){
+  const t = String(raw || '').trim();
+  // רווח בתוך הטקסט = טקסט חופשי, לא קישור. בלעדיו new URL("https://not a url")
+  // "מצליח" (רווחים הופכים ל-%20 בתוך שם ה-host) ומציג קישור לאתר מזויף.
+  if (!t || /\s/.test(t)) return null;
+  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(t) ? t : 'https://' + t;
+  try {
+    const u = new URL(withScheme);
+    const hostOk = u.hostname.includes('.') || u.hostname === 'localhost' || u.hostname.startsWith('[');
+    return (u.protocol === 'http:' || u.protocol === 'https:') && hostOk ? u.href : null;
+  } catch (e) {
+    return null;
+  }
+}
+const linkLabel = href => { try { return new URL(href).hostname.replace(/^www\./, ''); } catch (e) { return 'קישור'; } };
+
+function ensureMetaEl(row, id){
+  const txt = row.querySelector('.txt');
+  if (!txt || txt.querySelector('[data-meta]')) return;
+  const box = document.createElement('div');
+  box.className = 'rowmeta';
+  box.dataset.meta = id;
+  box.innerHTML =
+    `<div class="rowdesc" data-desc-view="${id}" hidden></div>` +
+    `<a class="rowlink" data-link-view="${id}" target="_blank" rel="noopener noreferrer" hidden><span class="rowlink-host"></span><span aria-hidden="true">&nbsp;↗</span></a>` +
+    `<div class="metaedit" data-meta-edit="${id}" hidden>` +
+      `<input type="text" class="descin" data-desc-in="${id}" maxlength="${DESC_MAX}" placeholder="תיאור (שורה אחת)" aria-label="תיאור">` +
+      `<input type="url" class="linkin" data-link-in="${id}" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" dir="ltr" placeholder="קישור (https://…)" aria-label="קישור">` +
+      `<div class="linkerr" data-link-err="${id}" hidden>הקישור לא תקין — הוא לא יוצג כקישור</div>` +
+    `</div>`;
+  txt.insertBefore(box, txt.querySelector('.tier-ref'));
+}
+
+function loadRowMeta(saved){
+  rowMeta = {};
+  if (saved && typeof saved === 'object') {
+    Object.keys(saved).forEach(id => {
+      const m = saved[id];
+      if (!m || typeof m !== 'object' || Array.isArray(m)) {
+        console.error('madrid-trip: skipped invalid rowMeta entry', id, m);
+        return;
+      }
+      const e = cloneJson(m);
+      if (typeof e.desc !== 'string') delete e.desc;
+      if (typeof e.url !== 'string') delete e.url;
+      rowMeta[id] = e;
+    });
+  }
+}
+
+function syncMetaInputs(){
+  CURRENCY_IDS.forEach(id => {
+    const m = rowMeta[id] || {};
+    const d = document.querySelector(`[data-desc-in="${id}"]`);
+    const u = document.querySelector(`[data-link-in="${id}"]`);
+    if (d) d.value = m.desc || '';
+    if (u) u.value = m.url || '';
+  });
+}
+
+function setRowMetaField(id, field, value){
+  if (tier !== 'custom' || !CURRENCY_IDS.includes(id)) return;
+  const v = String(value).trim().slice(0, field === 'url' ? URL_MAX : DESC_MAX);
+  const entry = Object.assign({}, rowMeta[id]);
+  if (v) entry[field] = v; else delete entry[field];
+  if (Object.keys(entry).length) rowMeta[id] = entry; else delete rowMeta[id];
+  render();
+  scheduleSave();
+}
+
 /* ---- שורות משתמש ---- */
 const GROUP_KEYS = GROUPS.map(g => g.key);
 const CUR_OPTIONS = '<option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option>';
@@ -484,6 +601,12 @@ function buildUserRowEl(id){
     `<div class="tier-ref" data-tier-ref="${id}" hidden></div>` +
     `<div class="lockdate-wrap" data-lockdatewrap="${id}" hidden><label>תאריך חיוב</label><input type="date" data-lockdate="${id}" lang="he-IL"></div>` +
     `<div class="delrow-wrap" data-delwrap="${id}">` +
+      `<button class="renbtn" data-renbtn="${id}" type="button">שנה שם</button>` +
+      `<form class="renform" data-renform="${id}" hidden>` +
+        `<input type="text" maxlength="60" data-ren-in="${id}" aria-label="שם השורה">` +
+        `<button class="addok" type="submit">שמור</button>` +
+        `<button class="addcancel" data-rencancel="${id}" type="button">ביטול</button>` +
+      `</form>` +
       `<button class="delbtn" data-delbtn="${id}" type="button">מחק שורה</button>` +
       `<span class="delconfirm" data-delconfirm="${id}" hidden>למחוק? <button class="delyes" data-delyes="${id}" type="button">כן</button> <button class="delno" data-delno="${id}" type="button">לא</button></span>` +
     `</div></div>` +
@@ -491,6 +614,7 @@ function buildUserRowEl(id){
     `<input type="number" data-in="${id}" value="" min="0">` +
     `<div class="amt" data-amt="${id}"></div>`;
   row.querySelector('.name').textContent = userRows[id].label;
+  ensureMetaEl(row, id);
   return row;
 }
 
@@ -559,6 +683,7 @@ function deleteUserRow(id){
   delete userRows[id];
   delete customValues[id];
   delete customCurrencies[id];
+  delete rowMeta[id];
   delete defaults.values[id];
   const row = document.querySelector(`[data-item="${id}"]`);
   if (row) row.remove();
@@ -572,6 +697,35 @@ function setDelConfirm(id, on){
   const conf = document.querySelector(`[data-delconfirm="${id}"]`);
   if (btn) btn.hidden = on;
   if (conf) conf.hidden = !on;
+}
+
+/* שינוי שם: רק שורת משתמש, רק ב-custom. גם שורה נעולה — התווית היא לא
+   הסכום הקפוא. משנה רק label; group ו-createdAt (ולכן הסדר) נשארים. */
+function setRenaming(id, on){
+  const form = document.querySelector(`[data-renform="${id}"]`);
+  const btn = document.querySelector(`[data-renbtn="${id}"]`);
+  const del = document.querySelector(`[data-delbtn="${id}"]`);
+  if (!form) return;
+  form.hidden = !on;
+  if (btn) btn.hidden = on;
+  if (del) del.hidden = on;
+  if (on) {
+    const inp = form.querySelector('input');
+    inp.value = userRows[id].label;
+    inp.focus();
+    inp.select();
+  }
+}
+
+function renameUserRow(id, label){
+  if (tier !== 'custom' || !isUserRow(id)) return false;
+  const clean = String(label).trim().slice(0, 60);
+  if (!clean) return false;
+  userRows[id].label = clean;
+  const nameEl = document.querySelector(`[data-item="${id}"] .name`);
+  if (nameEl) nameEl.textContent = clean;
+  scheduleSave();
+  return true;
 }
 
 function closeAddForm(key){
@@ -624,6 +778,7 @@ function getState(){
     tier,
     showTierRefs,
     userRows: cloneJson(userRows),
+    rowMeta: cloneJson(rowMeta),
     custom: Object.assign({}, cloneJson(foreignCustom), {values: Object.assign({}, customValues), currencies: Object.assign({}, customCurrencies)}),
     toggles: Object.assign({}, toggles), locks: Object.assign({}, cloneJson(foreignLocks), locksOut),
     rates: {
@@ -661,6 +816,8 @@ function applyState(data){
   // שורות המשתמש נטענות ראשונות: הן קובעות את CURRENCY_IDS, ואת זה שנעילה
   // של id מסוים היא "מוכרת" ולא foreignLocks.
   loadUserRows(data && data.userRows);
+  loadRowMeta(data && data.rowMeta);
+  syncMetaInputs();
 
   const savedLocks = (data && data.locks) || {};
   foreignTop = {};
@@ -761,6 +918,8 @@ document.addEventListener('input', e => {
   if(e.target.id === 'rateIls') rateMeta.ils = todayIso();
   // שדות התקציב וימים/לילות חסומים לעריכה מחוץ ל-custom (ראו render()),
   // אז אירוע input עליהם לא יכול לקרות בשכבת מחיר — אין מעבר אוטומטי.
+  if (e.target.matches('[data-desc-in]')) setRowMetaField(e.target.dataset.descIn, 'desc', e.target.value);
+  if (e.target.matches('[data-link-in]')) setRowMetaField(e.target.dataset.linkIn, 'url', e.target.value);
   if(e.target.matches('input[type=number]')) { render(); scheduleSave(); }
   if(e.target.matches('[data-lockdate]')){
     const id = e.target.dataset.lockdate;
@@ -808,12 +967,33 @@ document.addEventListener('click', e => {
   if (cancel) { closeAddForm(cancel.dataset.addcancel); return; }
   const del = t.closest('[data-delbtn]');
   if (del) { if (tier === 'custom' && !locks[del.dataset.delbtn]) setDelConfirm(del.dataset.delbtn, true); return; }
+  const ren = t.closest('[data-renbtn]');
+  if (ren) { if (tier === 'custom') setRenaming(ren.dataset.renbtn, true); return; }
+  const renCancel = t.closest('[data-rencancel]');
+  if (renCancel) { setRenaming(renCancel.dataset.rencancel, false); return; }
   const no = t.closest('[data-delno]');
   if (no) { setDelConfirm(no.dataset.delno, false); return; }
   const yes = t.closest('[data-delyes]');
   if (yes) deleteUserRow(yes.dataset.delyes);
 });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && e.target.matches && e.target.matches('[data-ren-in]')) setRenaming(e.target.dataset.renIn, false);
+});
+const metaToggleInput = $('#metaToggle');
+if (metaToggleInput) metaToggleInput.addEventListener('change', e => {
+  metaEditing = e.target.checked;
+  render();
+});
 document.addEventListener('submit', e => {
+  const renForm = e.target.closest('[data-renform]');
+  if (renForm) {
+    e.preventDefault();
+    const id = renForm.dataset.renform;
+    // שם ריק לא נשמר — נשאר השם הקיים
+    renameUserRow(id, renForm.querySelector('input').value);
+    setRenaming(id, false);
+    return;
+  }
   const form = e.target.closest('[data-addform]');
   if (!form) return;
   e.preventDefault();
@@ -822,6 +1002,7 @@ document.addEventListener('submit', e => {
   closeAddForm(key);
 });
 buildAddRowWrappers();
+$$('.row[data-item]').forEach(row => ensureMetaEl(row, row.dataset.item));
 
 function refreshRate(key){
   const btn = document.querySelector(`[data-refresh="${key}"]`);
