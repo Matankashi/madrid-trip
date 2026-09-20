@@ -86,6 +86,19 @@ const toggles = {ucl:true, tour:false, trip:true};
    החיים כשיש נעילה — כך ששינוי שער או עריכת ימים/לילות אחרי הנעילה
    לא זז את הסכום הנעול אף לא אגורה. */
 let locks = {};
+/* תאימות קדימה. הכתיבה היא setDoc על המסמך כולו, כך שכל מה שהגרסה
+   הזו לא מכירה ולא כותבת בחזרה נמחק בשמירה הבאה — וטאב פתוח עם גרסה
+   ישנה יכול לעשות את זה בשקט למסמך שגרסה חדשה יותר כתבה. לכן שלושה
+   סוגי נתונים לא מוכרים נשמרים כפי שנטענו ומוחזרים כמות שהם ב-getState:
+   שדות ברמה העליונה, מפתחות לא מוכרים תחת custom, ונעילות של id שאין
+   לגרסה הזו שורה בשבילו (נעילה היא תיעוד של כסף שהוצא בפועל). ערכים
+   ומטבעות של id לא מוכר כבר שורדים לבד, כי customValues/customCurrencies
+   מועתקים במלואם. שדות מוכרים תמיד גוברים על הלא-מוכרים. */
+const KNOWN_TOP_FIELDS = ['tier','showTierRefs','custom','toggles','locks','rates','values','currencies'];
+let foreignTop = {};
+let foreignCustom = {};
+let foreignLocks = {};
+const cloneJson = v => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
 const $  = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const num = el => { const v = parseFloat(el.value); return isNaN(v) || v < 0 ? 0 : v; };
@@ -423,16 +436,16 @@ function getState(){
   });
   const locksOut = {};
   Object.keys(locks).forEach(id => { locksOut[id] = Object.assign({}, locks[id]); });
-  return {
+  return Object.assign({}, cloneJson(foreignTop), {
     tier,
     showTierRefs,
-    custom: {values: Object.assign({}, customValues), currencies: Object.assign({}, customCurrencies)},
-    toggles: Object.assign({}, toggles), locks: locksOut,
+    custom: Object.assign({}, cloneJson(foreignCustom), {values: Object.assign({}, customValues), currencies: Object.assign({}, customCurrencies)}),
+    toggles: Object.assign({}, toggles), locks: Object.assign({}, cloneJson(foreignLocks), locksOut),
     rates: {
       usd: {value: $('#rateUsd') ? $('#rateUsd').value : '1.08', updatedAt: rateMeta.usd},
       ils: {value: $('#rateIls') ? $('#rateIls').value : '4.05', updatedAt: rateMeta.ils}
     }
-  };
+  });
 }
 
 function applyState(data){
@@ -461,6 +474,12 @@ function applyState(data){
   if (refToggleEl) refToggleEl.checked = showTierRefs;
 
   const savedLocks = (data && data.locks) || {};
+  foreignTop = {};
+  foreignCustom = {};
+  foreignLocks = {};
+  if (data) Object.keys(data).forEach(k => { if (!KNOWN_TOP_FIELDS.includes(k)) foreignTop[k] = cloneJson(data[k]); });
+  if (data && data.custom) Object.keys(data.custom).forEach(k => { if (k !== 'values' && k !== 'currencies') foreignCustom[k] = cloneJson(data.custom[k]); });
+  Object.keys(savedLocks).forEach(id => { if (!CURRENCY_IDS.includes(id)) foreignLocks[id] = cloneJson(savedLocks[id]); });
   locks = {};
   CURRENCY_IDS.forEach(id => {
     const saved = savedLocks[id];
