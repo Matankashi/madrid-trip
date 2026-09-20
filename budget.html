@@ -23,6 +23,7 @@
       <div class="perday">ליום: <b id="perDay">€0</b> · לינה + אוכל בלבד: <b id="coreDay">€0</b> ליום</div>
       <div class="split">שולם: <b id="paidEur">€0</b> <span class="mono" id="paidIls"></span> · צפי: <b id="projEur">€0</b> <span class="mono" id="projIls"></span></div>
       <div class="compare" id="tierCompare" hidden></div>
+      <div class="compare" id="reserveLine" hidden></div>
       <div class="comp" id="comp"></div>
       <div class="legend" id="legend"></div>
       <div class="stamp">ATLÉTICO<br>MATCHDAY 08.11</div>
@@ -142,7 +143,7 @@
     </div>
   </div>
 
-  <h2><span class="dot" style="background:#5B6472"></span>תחבורה בעיר<span class="pct" data-pct="metro"></span></h2>
+  <h2><span class="dot" style="background:#5B6472"></span>תחבורה ותקשורת<span class="pct" data-pct="metro"></span></h2>
   <div class="rows">
     <div class="row" data-item="metro">
       <button class="lockbtn" data-lockbtn="metro" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
@@ -155,9 +156,20 @@
       <input type="number" data-in="metro" value="55" min="0">
       <div class="amt" data-amt="metro"></div>
     </div>
+    <div class="row" data-item="internet">
+      <button class="lockbtn" data-lockbtn="internet" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
+      <div class="txt">
+        <div class="name">אינטרנט</div><div class="hint">תקשורת בטיול</div>
+        <div class="tier-ref" data-tier-ref="internet" hidden></div>
+        <div class="lockdate-wrap" data-lockdatewrap="internet" hidden><label>תאריך חיוב</label><input type="date" data-lockdate="internet" lang="he-IL"></div>
+      </div>
+      <select class="cur" data-cur="internet" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
+      <input type="number" data-in="internet" value="0" min="0">
+      <div class="amt" data-amt="internet"></div>
+    </div>
   </div>
 
-  <h2><span class="dot" style="background:#8C3B4A"></span>טיולי יום<span class="pct" data-pct="trips"></span></h2>
+  <h2><span class="dot" style="background:#8C3B4A"></span>טיולים ואטרקציות<span class="pct" data-pct="trips"></span></h2>
   <div class="rows">
     <div class="row" data-item="trip">
       <button class="lockbtn" data-lockbtn="trip" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
@@ -172,10 +184,6 @@
       <input type="number" data-in="trip" value="60" min="0">
       <div class="amt" data-amt="trip"></div>
     </div>
-  </div>
-
-  <h2><span class="dot" style="background:#3D6E8C"></span>מוזיאונים ואטרקציות<span class="pct" data-pct="museums"></span></h2>
-  <div class="rows">
     <div class="row" data-item="museums">
       <button class="lockbtn" data-lockbtn="museums" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
       <div class="txt">
@@ -186,6 +194,32 @@
       <select class="cur" data-cur="museums" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
       <input type="number" data-in="museums" value="130" min="0">
       <div class="amt" data-amt="museums"></div>
+    </div>
+  </div>
+
+  <h2><span class="dot" style="background:#7A5C99"></span>ציוד לפני הטיול<span class="pct" data-pct="pre"></span></h2>
+  <div class="rows">
+    <div class="row" data-item="shirt">
+      <button class="lockbtn" data-lockbtn="shirt" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
+      <div class="txt">
+        <div class="name">חולצת משחק</div><div class="hint">נרכשה לפני הטיול</div>
+        <div class="tier-ref" data-tier-ref="shirt" hidden></div>
+        <div class="lockdate-wrap" data-lockdatewrap="shirt" hidden><label>תאריך חיוב</label><input type="date" data-lockdate="shirt" lang="he-IL"></div>
+      </div>
+      <select class="cur" data-cur="shirt" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
+      <input type="number" data-in="shirt" value="0" min="0">
+      <div class="amt" data-amt="shirt"></div>
+    </div>
+    <div class="row" data-item="scale">
+      <button class="lockbtn" data-lockbtn="scale" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
+      <div class="txt">
+        <div class="name">משקל ידני למזוודה</div><div class="hint">לפני הטיסה</div>
+        <div class="tier-ref" data-tier-ref="scale" hidden></div>
+        <div class="lockdate-wrap" data-lockdatewrap="scale" hidden><label>תאריך חיוב</label><input type="date" data-lockdate="scale" lang="he-IL"></div>
+      </div>
+      <select class="cur" data-cur="scale" aria-label="מטבע"><option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option></select>
+      <input type="number" data-in="scale" value="0" min="0">
+      <div class="amt" data-amt="scale"></div>
     </div>
   </div>
 

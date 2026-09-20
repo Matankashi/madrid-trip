@@ -18,7 +18,7 @@ import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.18.0/
    דגל userEdited חוסם את ה-getDoc מלדרוס עריכה שכבר בוצעה בזמן
    שהבקשה עוד באוויר (חלון קצר בטעינת העמוד). */
 
-const FIELD_IDS = ['flight','airport','nightly','daily','barca','ucl','tour','metro','trip','tripCount','museums','misc'];
+const FIELD_IDS = ['flight','airport','nightly','daily','barca','ucl','tour','metro','trip','tripCount','museums','shirt','scale','internet','misc'];
 const CURRENCY_IDS = FIELD_IDS.filter(id => id !== 'tripCount');
 const GLOBAL_IDS = ['days','nights'];
 const STORE_KEY = 'madrid.budget.v1';
@@ -44,11 +44,17 @@ const LOCK_ICON_OPEN = '<svg viewBox="0 0 24 24" width="13" height="13" fill="no
    רק בשכבת "מותאם אישית" (customValues/customCurrencies), וזו היחידה
    שנשמרת. אם מוסיפים דרך חדשה לשנות תקציב בעתיד — היא לא נוגעת כאן. */
 const PRESETS = {
-  lean:{flight:230,airport:12,nightly:58,daily:32,barca:140,ucl:45,tour:25,metro:35,trip:30,tripCount:2,museums:55,misc:120},
-  mid: {flight:330,airport:12,nightly:95,daily:55,barca:250,ucl:70,tour:25,metro:55,trip:60,tripCount:2,museums:130,misc:200},
-  rich:{flight:480,airport:70,nightly:165,daily:95,barca:420,ucl:120,tour:60,metro:130,trip:110,tripCount:2,museums:220,misc:350}
+  lean:{flight:230,airport:12,nightly:58,daily:32,barca:140,ucl:45,tour:25,metro:35,trip:30,tripCount:2,museums:55,shirt:0,scale:0,internet:0,misc:120},
+  mid: {flight:330,airport:12,nightly:95,daily:55,barca:250,ucl:70,tour:25,metro:55,trip:60,tripCount:2,museums:130,shirt:0,scale:0,internet:0,misc:200},
+  rich:{flight:480,airport:70,nightly:165,daily:95,barca:420,ucl:120,tour:60,metro:130,trip:110,tripCount:2,museums:220,shirt:0,scale:0,internet:0,misc:350}
 };
 const TIER_LABELS = {lean:'חסכוני', mid:'מאוזן', rich:'נוח', custom:'מותאם אישית'};
+/* שורות בלי מקבילה בשכבות המחיר (0 בכל שלוש ב-PRESETS): התכנון המקורי
+   לא תקצב אותן בנפרד — הן נספרות מול הרזרבה (misc). ההשוואה הכוללת
+   כבר הוגנת כי סכום השכבה כולל את הרזרבה המלאה; כאן זה רק משפיע על
+   התצוגה: שורת הייחוס שלהן ושורת "כמה מהרזרבה נוצל". שורה חדשה
+   שנוספת עם 0 בכל השכבות נכנסת לכאן אוטומטית. */
+const RESERVE_ROWS = CURRENCY_IDS.filter(id => id !== 'misc' && ['lean', 'mid', 'rich'].every(t => PRESETS[t][id] === 0));
 /* PRESETS הם קבועי קוד בלבד — לעולם לא נקראים/נכתבים ל-Firestore.
    הנתונים ה"אמיתיים" של המשתמש חיים ב-customValues/customCurrencies
    (נשמרים תחת custom.values/custom.currencies), ו-tier קובע אם ה-DOM
@@ -64,9 +70,9 @@ const GROUPS = [
   {key:'stay',   label:'לינה',    color:'#C4262E', items:['nightly']},
   {key:'food',   label:'אוכל',    color:'#C9962C', items:['daily']},
   {key:'ball',   label:'כדורגל',  color:'#2F6F4E', items:['barca','ucl','tour']},
-  {key:'metro',  label:'תחבורה',  color:'#5B6472', items:['metro']},
-  {key:'trips',  label:'טיולי יום',color:'#8C3B4A',items:['trip']},
-  {key:'museums',label:'מוזיאונים',color:'#3D6E8C',items:['museums']},
+  {key:'metro',  label:'תחבורה ותקשורת',color:'#5B6472', items:['metro','internet']},
+  {key:'trips',  label:'טיולים ואטרקציות',color:'#8C3B4A',items:['trip','museums']},
+  {key:'pre',    label:'ציוד לפני הטיול',color:'#7A5C99',items:['shirt','scale']},
   {key:'misc',   label:'רזרבה',   color:'#A9A497', items:['misc']}
 ];
 const toggles = {ucl:true, tour:false, trip:true};
@@ -185,6 +191,10 @@ function render(){
   // מצב הנעילה מוצג/מיושם רק ב-custom: כפתור המנעול עצמו זמין רק שם
   // (הוא חסר משמעות בשכבת מחיר קבועה), והשדות נחסמים רק כשהנעילה
   // בפועל פעילה (isLockActive) — לא סתם כי locks[id] קיים.
+  // בשכבת מחיר כל השדות לקריאה בלבד (ימים/לילות כלולים — הם נשמרים ב-
+  // custom.values): שכבת מחיר היא תצוגה של התכנון המקורי, לא משטח עריכה.
+  const readOnly = tier !== 'custom';
+  GLOBAL_IDS.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = readOnly; });
   CURRENCY_IDS.forEach(id => {
     const active = isLockActive(id);
     const row = document.querySelector(`[data-item="${id}"]`);
@@ -194,9 +204,9 @@ function render(){
     const lockBtn = document.querySelector(`[data-lockbtn="${id}"]`);
     const dateWrap = document.querySelector(`[data-lockdatewrap="${id}"]`);
     const tripCountInput = id === 'trip' ? document.querySelector('[data-in="tripCount"]') : null;
-    if (amountInput) amountInput.disabled = active;
-    if (curSelect) curSelect.disabled = active;
-    if (tripCountInput) tripCountInput.disabled = active;
+    if (amountInput) amountInput.disabled = active || readOnly;
+    if (curSelect) curSelect.disabled = active || readOnly;
+    if (tripCountInput) tripCountInput.disabled = active || readOnly;
     if (lockBtn) {
       lockBtn.hidden = tier !== 'custom';
       lockBtn.setAttribute('aria-pressed', String(!!locks[id]));
@@ -217,7 +227,9 @@ function render(){
     if (!refEl) return;
     if (showRefsNow) {
       refEl.hidden = false;
-      refEl.textContent = 'ייחוס: ' + ['lean', 'mid', 'rich'].map(t => eur(PRESETS[t][id])).join(' · ');
+      refEl.textContent = RESERVE_ROWS.includes(id)
+        ? 'ייחוס: נספר ברזרבה'
+        : 'ייחוס: ' + ['lean', 'mid', 'rich'].map(t => eur(PRESETS[t][id])).join(' · ');
     } else {
       refEl.hidden = true;
     }
@@ -278,6 +290,18 @@ function render(){
       compareEl.hidden = true;
     }
   }
+
+  // כמה מהרזרבה נוצל: misc + כל השורות שנספרות מולה, מול הרזרבה בכל שכבה.
+  const reserveEl = $('#reserveLine');
+  if (reserveEl) {
+    if (tier === 'custom') {
+      const used = lineValueEur('misc') + RESERVE_ROWS.reduce((sum, id) => sum + lineValueEur(id), 0);
+      reserveEl.hidden = false;
+      reserveEl.textContent = 'רזרבה: ' + eur(used) + ' מתוך ' + ['lean', 'mid', 'rich'].map(t => eur(PRESETS[t].misc)).join(' · ');
+    } else {
+      reserveEl.hidden = true;
+    }
+  }
 }
 
 /* סך "התוכנית המקורית בשכבת מחיר X" — טהור מ-PRESETS בלבד, בלי שום
@@ -336,6 +360,14 @@ function renderTierButtons(){
    שלה, לא הסכום ששולם בפועל. days/nights הם גלובליים ולא חלק מאף
    שכבה, אז תמיד מ-custom. */
 function applyValuesForTier(t){
+  // בורר המטבע של כל שורה תמיד מ-customCurrencies, גם בשכבת מחיר: זו
+  // בחירת המשתמש (ראו presetAmountForRow), והיא חייבת להיקבע *לפני* הערכים
+  // כדי שמחיר הייחוס יומר למטבע האמיתי — אחרת אחרי טעינה בשכבת מחיר
+  // כל הבוררים מראים EUR (ברירת המחדל של ה-HTML).
+  CURRENCY_IDS.forEach(id => {
+    const sel = document.querySelector(`[data-cur="${id}"]`);
+    if (sel) sel.value = (customCurrencies[id] === 'USD' || customCurrencies[id] === 'ILS') ? customCurrencies[id] : 'EUR';
+  });
   FIELD_IDS.forEach(id => {
     const el = document.querySelector(`[data-in="${id}"]`);
     if (!el) return;
@@ -349,26 +381,13 @@ function applyValuesForTier(t){
     const el = document.getElementById(id);
     if (el) el.value = customValues[id] !== undefined ? customValues[id] : defaults.values[id];
   });
-  CURRENCY_IDS.forEach(id => {
-    if (t === 'custom') {
-      const sel = document.querySelector(`[data-cur="${id}"]`);
-      if (sel) sel.value = (customCurrencies[id] === 'USD' || customCurrencies[id] === 'ILS') ? customCurrencies[id] : 'EUR';
-    }
-    // t הוא שכבת מחיר: לא נוגעים בבורר המטבע בכלל, נעולה או לא —
-    // מחיר הייחוס כבר הומר למטבע הקיים ב-presetAmountForRow.
-  });
 }
 
 function applyTier(target){
+  // שכבת מחיר היא תצוגה לקריאה בלבד של התכנון המקורי — מעבר אליה (וממנה)
+  // אף פעם לא נוגע ב-customValues/customCurrencies/locks. רק עריכה של
+  // שדה בזמן ש-tier==='custom' כותבת ל-custom.
   if (target === tier) return;
-  if (target !== 'custom' && tier === 'custom') {
-    const ok = confirm(`החלפה ל"${TIER_LABELS[target]}" תחליף את הנתונים המותאמים אישית שלך בשורות הפתוחות (לא נעולות). להמשיך?`);
-    if (!ok) return;
-    FIELD_IDS.forEach(id => {
-      if (locks[lockOwnerOf(id)]) return;
-      customValues[id] = String(presetAmountForRow(id, target));
-    });
-  }
   tier = target;
   applyValuesForTier(tier);
   renderTierButtons();
@@ -385,20 +404,22 @@ GLOBAL_IDS.forEach(id => { const el = $(`#${id}`); if (el) defaults.values[id] =
 
 /* מסנכרן את customValues/currencies מה-DOM: תמיד עבור GLOBAL_IDS
    (ימים/לילות אינם שייכים לאף שכבה), ומעבר לזה רק כש-tier==='custom'
-   — גם עבור שורה נעולה, כי בשכבת מחיר קבועה ה-DOM מציג את מחיר
-   הייחוס של השכבה (לא את custom), ולכתוב אותו לתוך customValues היה
-   דורס את הסכום האמיתי שנעל המשתמש. זה מה שמבטיח את כלל 5: רק custom
-   נשמר, presets לא נכתבים ל-Firestore בכלל. */
+   ורק לשורה לא נעולה. בשכבת מחיר קבועה ה-DOM מציג את מחיר הייחוס של
+   השכבה (לא את custom), ושורה נעולה היא בדיוק השורה שאסור שערך מה-DOM
+   ידרוס: השדות שלה חסומים לעריכה, אז ה-DOM אף פעם לא מקור האמת שלה —
+   customValues/customCurrencies הם.
+   זה מה שמבטיח את כלל 5: רק custom נשמר, presets לא נכתבים
+   ל-Firestore בכלל. */
 function getState(){
   GLOBAL_IDS.forEach(id => { const el = $(`#${id}`); if (el) customValues[id] = el.value; });
   FIELD_IDS.forEach(id => {
-    if (tier === 'custom') {
+    if (tier === 'custom' && !locks[lockOwnerOf(id)]) {
       const el = $(`[data-in="${id}"]`);
       if (el) customValues[id] = el.value;
     }
   });
   CURRENCY_IDS.forEach(id => {
-    if (tier === 'custom' || locks[id]) customCurrencies[id] = currencyOf(id);
+    if (tier === 'custom' && !locks[id]) customCurrencies[id] = currencyOf(id);
   });
   const locksOut = {};
   Object.keys(locks).forEach(id => { locksOut[id] = Object.assign({}, locks[id]); });
@@ -455,9 +476,6 @@ function applyState(data){
     }
   });
 
-  applyValuesForTier(tier);
-  renderTierButtons();
-
   // שער USD: אין ערך ישן להעביר — ברירת המחדל שכבר ב-HTML (1.08) עם תאריך לא ידוע.
   if (savedRates.usd && savedRates.usd.value !== undefined) {
     $('#rateUsd').value = savedRates.usd.value;
@@ -475,6 +493,11 @@ function applyState(data){
   } else {
     rateMeta.ils = null;
   }
+  // הערכים מוצגים רק אחרי שהשערים נקבעו: בשכבת מחיר, presetAmountForRow
+  // ממיר את מחיר הייחוס לפי השער החי ב-DOM — אחרת אחרי טעינה הוא ממיר
+  // לפי ברירת המחדל של ה-HTML (4.05) ולא לפי השער השמור.
+  applyValuesForTier(tier);
+  renderTierButtons();
   Object.keys(defaults.toggles).forEach(k => {
     toggles[k] = savedToggles[k] !== undefined ? !!savedToggles[k] : defaults.toggles[k];
     const btn = $(`[data-tog="${k}"]`);
@@ -528,14 +551,8 @@ $$('.tog').forEach(b => b.addEventListener('click', () => {
 document.addEventListener('input', e => {
   if(e.target.id === 'rateUsd') rateMeta.usd = todayIso();
   if(e.target.id === 'rateIls') rateMeta.ils = todayIso();
-  // עריכת שדה תקציב/ימים/לילות בזמן ששכבת מחיר פעילה עוברת אוטומטית
-  // ל-custom, עם הערכים הנוכחיים (שכבה + העריכה הזו) כנקודת פתיחה —
-  // ה-DOM כבר מכיל את הערך החדש ברגע שאירוע ה-input יורה, אז זה
-  // בדיוק מה ש-getState/render יתפסו ברגע שtier=='custom'.
-  if(e.target.matches('[data-in], #days, #nights') && tier !== 'custom'){
-    tier = 'custom';
-    renderTierButtons();
-  }
+  // שדות התקציב וימים/לילות חסומים לעריכה מחוץ ל-custom (ראו render()),
+  // אז אירוע input עליהם לא יכול לקרות בשכבת מחיר — אין מעבר אוטומטי.
   if(e.target.matches('input[type=number]')) { render(); scheduleSave(); }
   if(e.target.matches('[data-lockdate]')){
     const id = e.target.dataset.lockdate;
@@ -544,7 +561,6 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', e => {
   if(e.target.matches('select.cur')) {
-    if (tier !== 'custom') { tier = 'custom'; renderTierButtons(); }
     render();
     scheduleSave();
   }
