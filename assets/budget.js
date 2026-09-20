@@ -18,8 +18,11 @@ import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.18.0/
    דגל userEdited חוסם את ה-getDoc מלדרוס עריכה שכבר בוצעה בזמן
    שהבקשה עוד באוויר (חלון קצר בטעינת העמוד). */
 
-const FIELD_IDS = ['flight','airport','nightly','daily','barca','ucl','tour','metro','trip','tripCount','museums','shirt','scale','internet','misc'];
-const CURRENCY_IDS = FIELD_IDS.filter(id => id !== 'tripCount');
+const FIXED_FIELD_IDS = ['flight','airport','nightly','daily','barca','ucl','tour','metro','trip','tripCount','museums','shirt','scale','internet','misc'];
+/* FIELD_IDS/CURRENCY_IDS = השורות הקבועות + שורות המשתמש (userRows).
+   הן משתנות בזמן ריצה (refreshIds), אז אף קוד לא אמור לשמור עותק שלהן. */
+let FIELD_IDS = FIXED_FIELD_IDS.slice();
+let CURRENCY_IDS = FIELD_IDS.filter(id => id !== 'tripCount');
 const GLOBAL_IDS = ['days','nights'];
 const STORE_KEY = 'madrid.budget.v1';
 const DEBOUNCE_MS = 800;
@@ -49,12 +52,27 @@ const PRESETS = {
   rich:{flight:480,airport:70,nightly:165,daily:95,barca:420,ucl:120,tour:60,metro:130,trip:110,tripCount:2,museums:220,shirt:0,scale:0,internet:0,misc:350}
 };
 const TIER_LABELS = {lean:'חסכוני', mid:'מאוזן', rich:'נוח', custom:'מותאם אישית'};
-/* שורות בלי מקבילה בשכבות המחיר (0 בכל שלוש ב-PRESETS): התכנון המקורי
-   לא תקצב אותן בנפרד — הן נספרות מול הרזרבה (misc). ההשוואה הכוללת
-   כבר הוגנת כי סכום השכבה כולל את הרזרבה המלאה; כאן זה רק משפיע על
-   התצוגה: שורת הייחוס שלהן ושורת "כמה מהרזרבה נוצל". שורה חדשה
-   שנוספת עם 0 בכל השכבות נכנסת לכאן אוטומטית. */
-const RESERVE_ROWS = CURRENCY_IDS.filter(id => id !== 'misc' && ['lean', 'mid', 'rich'].every(t => PRESETS[t][id] === 0));
+/* שורה "בלי תכנון" = אין לה מחיר בשכבות המחיר: שורת משתמש (userRows —
+   אין לה PRESETS בכלל), או שורה קבועה שכל שלושת ה-PRESETS שלה 0
+   (shirt/scale/internet). התכנון המקורי לא תקצב אותה בנפרד — היא נספרת
+   מול הרזרבה (misc), ולכן: (1) ההשוואה הכוללת נשארת הוגנת בלי שינוי —
+   צד השכבות כבר כולל את הרזרבה המלאה; (2) שורת "כמה מהרזרבה נוצל"
+   מסכמת misc + כל שורה כזו; (3) בשכבת מחיר היא מוסתרת לגמרי ולא נספרת,
+   כדי שהסך יישאר בדיוק התכנון המקורי. אין לה שורת ייחוס עם שלושה
+   מחירים — רק "נספר ברזרבה". */
+const PLANLESS_FIXED_ROWS = FIXED_FIELD_IDS.filter(id => id !== 'tripCount' && ['lean', 'mid', 'rich'].every(t => PRESETS[t][id] === 0));
+/* שורות שהמשתמש הוסיף: userRows[id] = {label, group, createdAt}. הערך,
+   המטבע והנעילה שלהן נשמרים באותם מקומות של שורה קבועה (custom.values[id],
+   custom.currencies[id], locks[id]), כך שכל לוגיקת הסכומים/נעילה עובדת בלי
+   שינוי. ה-id תמיד מתחיל ב-u_, ולכן אף פעם לא מתנגש ב-id של PRESETS. */
+let userRows = {};
+const isUserRow = id => Object.prototype.hasOwnProperty.call(userRows, id);
+const isReserveRow = id => isUserRow(id) || PLANLESS_FIXED_ROWS.includes(id);
+const userRowIds = () => Object.keys(userRows).sort((x, y) => (userRows[x].createdAt || 0) - (userRows[y].createdAt || 0) || (x < y ? -1 : 1));
+function refreshIds(){
+  FIELD_IDS = FIXED_FIELD_IDS.concat(userRowIds());
+  CURRENCY_IDS = FIELD_IDS.filter(id => id !== 'tripCount');
+}
 /* PRESETS הם קבועי קוד בלבד — לעולם לא נקראים/נכתבים ל-Firestore.
    הנתונים ה"אמיתיים" של המשתמש חיים ב-customValues/customCurrencies
    (נשמרים תחת custom.values/custom.currencies), ו-tier קובע אם ה-DOM
@@ -75,6 +93,7 @@ const GROUPS = [
   {key:'pre',    label:'ציוד לפני הטיול',color:'#7A5C99',items:['shirt','scale']},
   {key:'misc',   label:'רזרבה',   color:'#A9A497', items:['misc']}
 ];
+const groupItems = g => g.items.concat(userRowIds().filter(id => userRows[id].group === g.key));
 const toggles = {ucl:true, tour:false, trip:true};
 /* locks: שורות שכבר שולמו וחויבו בפועל. מפתח = id, קיים רק לשורות
    נעולות (חסר = פתוחה, אותו דפוס כמו currencies/rates). כל ערך
@@ -94,7 +113,7 @@ let locks = {};
    לגרסה הזו שורה בשבילו (נעילה היא תיעוד של כסף שהוצא בפועל). ערכים
    ומטבעות של id לא מוכר כבר שורדים לבד, כי customValues/customCurrencies
    מועתקים במלואם. שדות מוכרים תמיד גוברים על הלא-מוכרים. */
-const KNOWN_TOP_FIELDS = ['tier','showTierRefs','custom','toggles','locks','rates','values','currencies'];
+const KNOWN_TOP_FIELDS = ['tier','showTierRefs','custom','toggles','locks','rates','values','currencies','userRows'];
 let foreignTop = {};
 let foreignCustom = {};
 let foreignLocks = {};
@@ -157,6 +176,7 @@ function isLockActive(id){
 
 function lineValueNative(id){
   if(id in toggles && !toggles[id]) return 0;
+  if(tier !== 'custom' && isReserveRow(id)) return 0; // מוסתרת בשכבת מחיר
   if(isLockActive(id)) return Number(locks[id].amount) || 0;
   const inp = document.querySelector(`[data-in="${id}"]`);
   if(!inp) return 0;
@@ -185,7 +205,7 @@ function render(){
   let grand = 0, paidEur = 0, projEur = 0;
   GROUPS.forEach(g => {
     let sum = 0;
-    g.items.forEach(id => {
+    groupItems(g).forEach(id => {
       const vEur = lineValueEur(id);
       const cell = document.querySelector(`[data-amt="${id}"]`);
       if(cell) cell.textContent = fmtMoney(lineValueNative(id), currencyOf(id));
@@ -240,7 +260,7 @@ function render(){
     if (!refEl) return;
     if (showRefsNow) {
       refEl.hidden = false;
-      refEl.textContent = RESERVE_ROWS.includes(id)
+      refEl.textContent = isReserveRow(id)
         ? 'ייחוס: נספר ברזרבה'
         : 'ייחוס: ' + ['lean', 'mid', 'rich'].map(t => eur(PRESETS[t][id])).join(' · ');
     } else {
@@ -304,11 +324,40 @@ function render(){
     }
   }
 
+  // שכבת מחיר מציגה רק את התכנון המקורי: שורה בלי תכנון (isReserveRow)
+  // מוסתרת לגמרי, וקבוצה שכל שורותיה מוסתרות מוסתרת איתן. כפתורי הוספה
+  // ומחיקה קיימים רק ב-custom; מחיקה חסומה כל עוד השורה נעולה.
+  GROUPS.forEach(g => {
+    let anyVisible = false;
+    groupItems(g).forEach(id => {
+      const hide = readOnly && isReserveRow(id);
+      const row = document.querySelector(`[data-item="${id}"]`);
+      if (row) row.style.display = hide ? 'none' : '';
+      if (!hide) anyVisible = true;
+    });
+    const pctEl = document.querySelector(`[data-pct="${g.key}"]`);
+    const h2 = pctEl && pctEl.closest('h2');
+    const rowsEl = h2 && h2.nextElementSibling;
+    const hideGroup = readOnly && !anyVisible;
+    if (h2) h2.style.display = hideGroup ? 'none' : '';
+    if (rowsEl) rowsEl.style.display = hideGroup ? 'none' : '';
+    const addWrap = document.querySelector(`[data-addwrap="${g.key}"]`);
+    if (addWrap) addWrap.style.display = readOnly ? 'none' : '';
+  });
+  userRowIds().forEach(id => {
+    const delBtn = document.querySelector(`[data-delbtn="${id}"]`);
+    if (!delBtn) return;
+    delBtn.disabled = !!locks[id];
+    delBtn.title = locks[id] ? 'בטל את הנעילה כדי למחוק' : '';
+    const delWrap = document.querySelector(`[data-delwrap="${id}"]`);
+    if (delWrap) delWrap.style.display = readOnly ? 'none' : '';
+  });
+
   // כמה מהרזרבה נוצל: misc + כל השורות שנספרות מולה, מול הרזרבה בכל שכבה.
   const reserveEl = $('#reserveLine');
   if (reserveEl) {
     if (tier === 'custom') {
-      const used = lineValueEur('misc') + RESERVE_ROWS.reduce((sum, id) => sum + lineValueEur(id), 0);
+      const used = lineValueEur('misc') + CURRENCY_IDS.filter(isReserveRow).reduce((sum, id) => sum + lineValueEur(id), 0);
       reserveEl.hidden = false;
       reserveEl.textContent = 'רזרבה: ' + eur(used) + ' מתוך ' + ['lean', 'mid', 'rich'].map(t => eur(PRESETS[t].misc)).join(' · ');
     } else {
@@ -327,7 +376,10 @@ function render(){
 function presetTotalEur(tierName){
   const preset = PRESETS[tierName];
   let total = 0;
-  CURRENCY_IDS.forEach(id => {
+  // רק מפתחות ה-PRESETS עצמם: לשורת משתמש אין preset[id], ואיטרציה על
+  // CURRENCY_IDS הייתה מחזירה NaN לכל ההשוואה.
+  Object.keys(preset).forEach(id => {
+    if (id === 'tripCount') return;
     if (id in toggles && !toggles[id]) return;
     let amount = preset[id];
     if (id === 'nightly') amount *= num($('#nights'));
@@ -415,6 +467,138 @@ const defaults = {values: {}, toggles: Object.assign({}, toggles)};
 FIELD_IDS.forEach(id => { const el = $(`[data-in="${id}"]`); if (el) defaults.values[id] = el.value; });
 GLOBAL_IDS.forEach(id => { const el = $(`#${id}`); if (el) defaults.values[id] = el.value; });
 
+/* ---- שורות משתמש ---- */
+const GROUP_KEYS = GROUPS.map(g => g.key);
+const CUR_OPTIONS = '<option value="EUR">€</option><option value="USD">$</option><option value="ILS">₪</option>';
+
+function buildUserRowEl(id){
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.dataset.item = id;
+  row.dataset.userRow = '1';
+  // ה-id נוצר בקוד (u_ + תווים לטיניים), אז שילוב שלו ב-HTML בטוח; התווית
+  // שהמשתמש הקליד נכנסת רק דרך textContent.
+  row.innerHTML =
+    `<button class="lockbtn" data-lockbtn="${id}" aria-pressed="false" aria-label="נעילת תשלום" type="button">${LOCK_ICON_OPEN}</button>` +
+    `<div class="txt"><div class="name"></div>` +
+    `<div class="tier-ref" data-tier-ref="${id}" hidden></div>` +
+    `<div class="lockdate-wrap" data-lockdatewrap="${id}" hidden><label>תאריך חיוב</label><input type="date" data-lockdate="${id}" lang="he-IL"></div>` +
+    `<div class="delrow-wrap" data-delwrap="${id}">` +
+      `<button class="delbtn" data-delbtn="${id}" type="button">מחק שורה</button>` +
+      `<span class="delconfirm" data-delconfirm="${id}" hidden>למחוק? <button class="delyes" data-delyes="${id}" type="button">כן</button> <button class="delno" data-delno="${id}" type="button">לא</button></span>` +
+    `</div></div>` +
+    `<select class="cur" data-cur="${id}" aria-label="מטבע">${CUR_OPTIONS}</select>` +
+    `<input type="number" data-in="${id}" value="" min="0">` +
+    `<div class="amt" data-amt="${id}"></div>`;
+  row.querySelector('.name').textContent = userRows[id].label;
+  return row;
+}
+
+function groupRowsEl(key){
+  const pctEl = document.querySelector(`[data-pct="${key}"]`);
+  const h2 = pctEl && pctEl.closest('h2');
+  return h2 && h2.nextElementSibling;
+}
+
+function insertUserRowEl(id){
+  const rowsEl = groupRowsEl(userRows[id].group);
+  if (!rowsEl) return;
+  rowsEl.insertBefore(buildUserRowEl(id), rowsEl.querySelector('[data-addwrap]'));
+}
+
+/* טוען userRows ממסמך שמור. פריט פגום (בלי תווית / id לא תקין) לא נטען
+   וכן נרשם בקונסולה — שלא ייעלם בשקט. group לא מוכר נופל ל-misc. ה-
+   entry נשמר כפי שהוא ומעליו רק label/group/createdAt מנוקים, כדי ששדות
+   עתידיים (תיאור/קישור) לא יימחקו בשמירה. */
+function loadUserRows(saved){
+  $$('[data-user-row]').forEach(el => el.remove());
+  userRows = {};
+  if (saved && typeof saved === 'object') {
+    Object.keys(saved).forEach(id => {
+      const def = saved[id];
+      if (!/^u_[a-z0-9]+$/.test(id) || !def || typeof def.label !== 'string' || !def.label.trim()) {
+        console.error('madrid-trip: skipped invalid userRows entry', id, def);
+        return;
+      }
+      userRows[id] = Object.assign({}, cloneJson(def), {
+        label: def.label.trim().slice(0, 60),
+        group: GROUP_KEYS.includes(def.group) ? def.group : 'misc',
+        createdAt: Number(def.createdAt) || 0
+      });
+    });
+  }
+  refreshIds();
+  userRowIds().forEach(id => {
+    defaults.values[id] = '';
+    insertUserRowEl(id);
+  });
+}
+
+function createUserRow(groupKey, label){
+  if (tier !== 'custom' || !GROUP_KEYS.includes(groupKey)) return;
+  const clean = String(label).trim().slice(0, 60);
+  if (!clean) return;
+  const id = 'u_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  userRows[id] = {label: clean, group: groupKey, createdAt: Date.now()};
+  customValues[id] = '';
+  customCurrencies[id] = 'EUR';
+  defaults.values[id] = '';
+  refreshIds();
+  insertUserRowEl(id);
+  render();
+  scheduleSave();
+  const inp = document.querySelector(`[data-in="${id}"]`);
+  if (inp) inp.focus();
+}
+
+/* מחיקה: כתיבה אחת (scheduleSave) שמסירה את ההגדרה, הערך, המטבע והנעילה
+   יחד — לא נשאר שום דבר יתום. שורה נעולה לא נמחקת (נעילה היא תיעוד של
+   כסף שהוצא בפועל — קודם מבטלים אותה, במכוון בשני צעדים). */
+function deleteUserRow(id){
+  if (tier !== 'custom' || !isUserRow(id) || locks[id]) return;
+  delete userRows[id];
+  delete customValues[id];
+  delete customCurrencies[id];
+  delete defaults.values[id];
+  const row = document.querySelector(`[data-item="${id}"]`);
+  if (row) row.remove();
+  refreshIds();
+  render();
+  scheduleSave();
+}
+
+function setDelConfirm(id, on){
+  const btn = document.querySelector(`[data-delbtn="${id}"]`);
+  const conf = document.querySelector(`[data-delconfirm="${id}"]`);
+  if (btn) btn.hidden = on;
+  if (conf) conf.hidden = !on;
+}
+
+function closeAddForm(key){
+  const btn = document.querySelector(`[data-addrow="${key}"]`);
+  const form = document.querySelector(`[data-addform="${key}"]`);
+  if (btn) btn.hidden = false;
+  if (form) { form.hidden = true; const i = form.querySelector('input'); if (i) i.value = ''; }
+}
+
+function buildAddRowWrappers(){
+  GROUPS.forEach(g => {
+    const rowsEl = groupRowsEl(g.key);
+    if (!rowsEl) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'addrow-wrap';
+    wrap.dataset.addwrap = g.key;
+    wrap.innerHTML =
+      `<button class="addrow" data-addrow="${g.key}" type="button">＋ הוסף שורה</button>` +
+      `<form class="addform" data-addform="${g.key}" hidden>` +
+        `<input type="text" maxlength="60" placeholder="שם השורה" aria-label="שם השורה החדשה">` +
+        `<button class="addok" type="submit">הוסף</button>` +
+        `<button class="addcancel" data-addcancel="${g.key}" type="button">ביטול</button>` +
+      `</form>`;
+    rowsEl.appendChild(wrap);
+  });
+}
+
 /* מסנכרן את customValues/currencies מה-DOM: תמיד עבור GLOBAL_IDS
    (ימים/לילות אינם שייכים לאף שכבה), ומעבר לזה רק כש-tier==='custom'
    ורק לשורה לא נעולה. בשכבת מחיר קבועה ה-DOM מציג את מחיר הייחוס של
@@ -439,6 +623,7 @@ function getState(){
   return Object.assign({}, cloneJson(foreignTop), {
     tier,
     showTierRefs,
+    userRows: cloneJson(userRows),
     custom: Object.assign({}, cloneJson(foreignCustom), {values: Object.assign({}, customValues), currencies: Object.assign({}, customCurrencies)}),
     toggles: Object.assign({}, toggles), locks: Object.assign({}, cloneJson(foreignLocks), locksOut),
     rates: {
@@ -472,6 +657,10 @@ function applyState(data){
   showTierRefs = (data && data.showTierRefs !== undefined) ? !!data.showTierRefs : true;
   const refToggleEl = $('#refToggle');
   if (refToggleEl) refToggleEl.checked = showTierRefs;
+
+  // שורות המשתמש נטענות ראשונות: הן קובעות את CURRENCY_IDS, ואת זה שנעילה
+  // של id מסוים היא "מוכרת" ולא foreignLocks.
+  loadUserRows(data && data.userRows);
 
   const savedLocks = (data && data.locks) || {};
   foreignTop = {};
@@ -604,6 +793,35 @@ document.addEventListener('click', e => {
   render();
   scheduleSave();
 });
+
+document.addEventListener('click', e => {
+  const t = e.target;
+  const addBtn = t.closest('[data-addrow]');
+  if (addBtn) {
+    const form = document.querySelector(`[data-addform="${addBtn.dataset.addrow}"]`);
+    addBtn.hidden = true;
+    form.hidden = false;
+    form.querySelector('input').focus();
+    return;
+  }
+  const cancel = t.closest('[data-addcancel]');
+  if (cancel) { closeAddForm(cancel.dataset.addcancel); return; }
+  const del = t.closest('[data-delbtn]');
+  if (del) { if (tier === 'custom' && !locks[del.dataset.delbtn]) setDelConfirm(del.dataset.delbtn, true); return; }
+  const no = t.closest('[data-delno]');
+  if (no) { setDelConfirm(no.dataset.delno, false); return; }
+  const yes = t.closest('[data-delyes]');
+  if (yes) deleteUserRow(yes.dataset.delyes);
+});
+document.addEventListener('submit', e => {
+  const form = e.target.closest('[data-addform]');
+  if (!form) return;
+  e.preventDefault();
+  const key = form.dataset.addform;
+  createUserRow(key, form.querySelector('input').value);
+  closeAddForm(key);
+});
+buildAddRowWrappers();
 
 function refreshRate(key){
   const btn = document.querySelector(`[data-refresh="${key}"]`);
