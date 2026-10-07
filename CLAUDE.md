@@ -44,7 +44,7 @@ Hosting. האתר עצמו יושב על GitHub Pages.
     הפריטים שאחריו.**
   - `budget` — כל הערכים, המטבעות, השערים, הנעילות והמתגים של
     `budget.html`, ב-`assets/budget.js`. מבנה
-    `{tier:'lean'|'mid'|'rich'|'custom', custom:{values:{...}, currencies:{...}}, toggles:{...}, rates:{usd:{value,updatedAt}, ils:{value,updatedAt}}, locks:{id:{amount,currency,rate,chargedOn}}, userRows:{u_id:{label,group,createdAt}}, rowMeta:{id:{desc,url}}}`.
+    `{tier:'lean'|'mid'|'rich'|'custom', custom:{values:{...}, currencies:{...}}, toggles:{...}, rates:{usd:{value,updatedAt}, ils:{value,updatedAt}}, locks:{id:{amount,currency,rate,chargedOn}}, userRows:{u_id:{label,group,createdAt}}, rowMeta:{id:{desc,url}}, rowLabels:{id:label}}`.
     **שכבות תקציב:** `PRESETS` (חסכוני/מאוזן/נוח) הם קבועי קוד בלבד —
     לעולם לא נכתבים ל-Firestore, רק `custom` (המספרים של המשתמש) ו-`tier`
     (איזו שכבה מוצגת כרגע) נשמרים. לחיצה על שכבת מחיר כותבת את מחיר
@@ -103,11 +103,17 @@ Hosting. האתר עצמו יושב על GitHub Pages.
     נעילה של `u_` id בלי הגדרה ב-`userRows` לא מוצגים ולא נספרים, אבל
     נשמרים במסמך (`foreignLocks`, ראו תאימות קדימה). `userRows` ב-
     `KNOWN_TOP_FIELDS`; entry נשמר כפי שנטען ומעליו רק label/group/createdAt
-    מנוקים, כדי ששדות עתידיים לא יימחקו. **שינוי שם** (`v1.11`): כפתור
-    "שנה שם" בשורת משתמש (לא בשורה קבועה), רק ב-custom, גם כשהשורה
-    נעולה (התווית היא לא הסכום הקפוא); Enter שומר, Escape או ביטול
-    סוגרים, שם ריק נדחה. משנה רק `label` — `group`, `createdAt` (ולכן
-    הסדר), הערך, המטבע, הנעילה והפרטים נשארים.
+    מנוקים, כדי ששדות עתידיים לא יימחקו. **שינוי שם** (`v1.11` לשורת משתמש, כל שורה
+    מאז `v1.18`): כפתור "שנה שם" בכל שורה (בשורת הפעולות, ליד כפתור
+    הפרטים), רק ב-custom, גם כשהשורה
+    נעולה (השם הוא לא הסכום הקפוא); Enter שומר, Escape או ביטול סוגרים.
+    שורת משתמש: משנה רק `userRows[id].label` (`group`, `createdAt` ולכן
+    הסדר נשארים), שם ריק נדחה. שורה קבועה: `rowLabels[id]` ברמה העליונה,
+    מפתח רק לשורה ששמה שונה מהשם שב-HTML (נלכד ב-`defaults.labels`);
+    שם ריק או השם המקורי מוחקים את המפתח ומחזירים את השם המקורי (הוא
+    מוצג כ-placeholder בשדה). ה-id לא משתנה, ולכן PRESETS, הייחוס, הערך,
+    המטבע, הנעילה והפרטים לא זזים; ה-hint שמתחת לשם לא משתנה. ערך של
+    id שאין לו שורה קבועה נשמר כמות שהוא. בדיקה: `phaseRename`.
     **תיאור וקישור לכל שורה** (`v1.11`, קבועה ומשתמש כאחד): `rowMeta`
     ברמה העליונה, `{id: {desc, url}}`, מפתח רק לשורה שיש לה לפחות אחד
     מהם (ריק → נמחק). לא בתוך `custom` ולא בתוך `userRows`, כדי שיעבוד

@@ -82,6 +82,12 @@ const metaOpen = new Set();
 const DESC_MAX = 200;
 const URL_MAX = 2000;
 let userRows = {};
+/* שם לשורה קבועה: rowLabels[id] = השם שהמשתמש נתן (מחליף את השם שב-HTML).
+   מפתח קיים רק לשורה ששמה שונה (חסר = השם המקורי, אותו דפוס כמו rowMeta).
+   לשורת משתמש השם נשאר ב-userRows[id].label. ערך של id שאין לו שורה
+   קבועה נשמר כמות שהוא (יתום — לא מוצג). */
+let rowLabels = {};
+const LABEL_MAX = 60;
 const isUserRow = id => Object.prototype.hasOwnProperty.call(userRows, id);
 const isReserveRow = id => isUserRow(id) || PLANLESS_FIXED_ROWS.includes(id);
 const userRowIds = () => Object.keys(userRows).sort((x, y) => (userRows[x].createdAt || 0) - (userRows[y].createdAt || 0) || (x < y ? -1 : 1));
@@ -129,7 +135,7 @@ let locks = {};
    לגרסה הזו שורה בשבילו (נעילה היא תיעוד של כסף שהוצא בפועל). ערכים
    ומטבעות של id לא מוכר כבר שורדים לבד, כי customValues/customCurrencies
    מועתקים במלואם. שדות מוכרים תמיד גוברים על הלא-מוכרים. */
-const KNOWN_TOP_FIELDS = ['tier','showTierRefs','custom','toggles','locks','rates','values','currencies','userRows','rowMeta'];
+const KNOWN_TOP_FIELDS = ['tier','showTierRefs','custom','toggles','locks','rates','values','currencies','userRows','rowMeta','rowLabels'];
 let foreignTop = {};
 let foreignCustom = {};
 let foreignLocks = {};
@@ -517,8 +523,9 @@ function applyTier(target){
 // ברירות המחדל שכבר ב-HTML, נלכדות לפני שכל נתון שמור נטען — הן
 // רשת הביטחון כששדה קיים ב-DOM אבל חסר במסמך השמור (data-c חדש
 // שנוסף אחרי שהמסמך נכתב בפעם האחרונה).
-const defaults = {values: {}, toggles: Object.assign({}, toggles)};
+const defaults = {values: {}, toggles: Object.assign({}, toggles), labels: {}};
 FIELD_IDS.forEach(id => { const el = $(`[data-in="${id}"]`); if (el) defaults.values[id] = el.value; });
+FIXED_FIELD_IDS.forEach(id => { const el = $(`[data-item="${id}"] .name`); if (el) defaults.labels[id] = el.textContent; });
 GLOBAL_IDS.forEach(id => { const el = $(`#${id}`); if (el) defaults.values[id] = el.value; });
 
 /* ---- תיאור וקישור ---- */
@@ -727,8 +734,16 @@ function setDelConfirm(id, on){
   if (conf) conf.hidden = !on;
 }
 
-/* שינוי שם: רק שורת משתמש, רק ב-custom. גם שורה נעולה — התווית היא לא
-   הסכום הקפוא. משנה רק label; group ו-createdAt (ולכן הסדר) נשארים. */
+/* שינוי שם: כל שורה (קבועה או משתמש), רק ב-custom. גם שורה נעולה — השם
+   הוא לא הסכום הקפוא. משנה רק את השם: בשורת משתמש userRows[id].label
+   (group ו-createdAt, ולכן הסדר, נשארים), בשורה קבועה rowLabels[id].
+   ה-id, PRESETS, הייחוס, הערך, המטבע, הנעילה והפרטים לא זזים. */
+const isFixedRow = id => FIXED_FIELD_IDS.includes(id) && id !== 'tripCount';
+function labelOf(id){
+  if (isUserRow(id)) return userRows[id].label;
+  return rowLabels[id] || defaults.labels[id] || '';
+}
+
 function setRenaming(id, on){
   const form = document.querySelector(`[data-renform="${id}"]`);
   const btn = document.querySelector(`[data-renbtn="${id}"]`);
@@ -739,21 +754,63 @@ function setRenaming(id, on){
   if (del) del.hidden = on;
   if (on) {
     const inp = form.querySelector('input');
-    inp.value = userRows[id].label;
+    inp.value = labelOf(id);
     inp.focus();
     inp.select();
   }
 }
 
-function renameUserRow(id, label){
-  if (tier !== 'custom' || !isUserRow(id)) return false;
-  const clean = String(label).trim().slice(0, 60);
-  if (!clean) return false;
-  userRows[id].label = clean;
+/* שם ריק: בשורת משתמש נדחה (נשאר השם הקיים), בשורה קבועה מחזיר את השם
+   המקורי — אחרת לא הייתה דרך חזרה אליו. */
+function renameRow(id, label){
+  if (tier !== 'custom') return false;
+  const clean = String(label).trim().slice(0, LABEL_MAX);
+  if (isUserRow(id)) {
+    if (!clean) return false;
+    userRows[id].label = clean;
+  } else if (isFixedRow(id)) {
+    if (clean && clean !== defaults.labels[id]) rowLabels[id] = clean; else delete rowLabels[id];
+  } else {
+    return false;
+  }
   const nameEl = document.querySelector(`[data-item="${id}"] .name`);
-  if (nameEl) nameEl.textContent = clean;
+  if (nameEl) nameEl.textContent = labelOf(id);
   scheduleSave();
   return true;
+}
+
+function loadRowLabels(saved){
+  rowLabels = {};
+  if (saved && typeof saved === 'object') {
+    Object.keys(saved).forEach(id => {
+      const v = saved[id];
+      if (typeof v !== 'string' || !v.trim()) {
+        console.error('madrid-trip: skipped invalid rowLabels entry', id, v);
+        return;
+      }
+      rowLabels[id] = v.trim().slice(0, LABEL_MAX);
+    });
+  }
+  FIXED_FIELD_IDS.forEach(id => {
+    const el = document.querySelector(`[data-item="${id}"] .name`);
+    if (el && isFixedRow(id)) el.textContent = labelOf(id);
+  });
+}
+
+// "שנה שם" לשורה קבועה — אותו מבנה כמו בשורת משתמש (בלי מחיקה), באותה
+// שורת פעולות של כפתור הפרטים (data-actwrap, נבנית ב-ensureMetaEl).
+function ensureRenameEl(row, id){
+  const actions = row.querySelector(`[data-actwrap="${id}"]`);
+  if (!actions || actions.querySelector('[data-renbtn]')) return;
+  actions.insertAdjacentHTML('beforeend',
+    `<button class="renbtn" data-renbtn="${id}" type="button">שנה שם</button>` +
+    `<form class="renform" data-renform="${id}" hidden>` +
+      `<input type="text" maxlength="${LABEL_MAX}" data-ren-in="${id}" aria-label="שם השורה">` +
+      `<button class="addok" type="submit">שמור</button>` +
+      `<button class="addcancel" data-rencancel="${id}" type="button">ביטול</button>` +
+    `</form>`);
+  // השם המקורי כ-placeholder: שמירה של שדה ריק מחזירה אליו
+  actions.querySelector('[data-ren-in]').placeholder = defaults.labels[id] || '';
 }
 
 function closeAddForm(key){
@@ -807,6 +864,7 @@ function getState(){
     showTierRefs,
     userRows: cloneJson(userRows),
     rowMeta: cloneJson(rowMeta),
+    rowLabels: cloneJson(rowLabels),
     custom: Object.assign({}, cloneJson(foreignCustom), {values: Object.assign({}, customValues), currencies: Object.assign({}, customCurrencies)}),
     toggles: Object.assign({}, toggles), locks: Object.assign({}, cloneJson(foreignLocks), locksOut),
     rates: {
@@ -886,6 +944,7 @@ function applyState(data){
   loadUserRows(savedUserRows);
   loadRowMeta(savedMeta);
   syncMetaInputs();
+  loadRowLabels(data && data.rowLabels);
 
   foreignTop = {};
   foreignCustom = {};
@@ -1139,8 +1198,8 @@ document.addEventListener('submit', e => {
   if (renForm) {
     e.preventDefault();
     const id = renForm.dataset.renform;
-    // שם ריק לא נשמר — נשאר השם הקיים
-    renameUserRow(id, renForm.querySelector('input').value);
+    // שם ריק: שורת משתמש נשארת עם השם הקיים, שורה קבועה חוזרת לשם המקורי
+    renameRow(id, renForm.querySelector('input').value);
     setRenaming(id, false);
     return;
   }
@@ -1153,6 +1212,7 @@ document.addEventListener('submit', e => {
 });
 buildAddRowWrappers();
 $$('.row[data-item]').forEach(row => ensureMetaEl(row, row.dataset.item));
+FIXED_FIELD_IDS.filter(isFixedRow).forEach(id => { const row = $(`[data-item="${id}"]`); if (row) ensureRenameEl(row, id); });
 
 function refreshRate(key){
   const btn = document.querySelector(`[data-refresh="${key}"]`);

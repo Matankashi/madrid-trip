@@ -20,6 +20,7 @@
         await t.phaseStay();                  // flat accommodation total + lock (reseeds itself)
         await t.phaseMigrate();               // shirt/scale/internet -> user rows (reseeds itself)
         await t.phaseGuard();                 // another tab/device changed the doc -> refuse to save (reseeds itself)
+        await t.phaseRename();                // rename built-in rows (reseeds itself)
         await t.dropTestDoc();                // deletes budget_test
    Every function returns {passed, failed, failures:[...]}.
 
@@ -320,8 +321,8 @@ export async function phaseC() {
   r.ok('unlocked row: charge-date field hidden', cs(q('[data-lockdatewrap="airport"]')) === 'none' && !vis(q('[data-lockdate="airport"]')));
   r.ok('locked row: charge-date field visible', vis(q('[data-lockdate="flight"]')));
 
-  // ---- 5. rename (user rows only)
-  r.ok('fixed rows have no rename control', !q('[data-renbtn="flight"]'));
+  // ---- 5. rename (user rows here; fixed rows in phaseRename)
+  r.ok('fixed rows have a rename control too, but no delete', !!q('[data-renbtn="flight"]') && !q('[data-delbtn="flight"]'));
   const before = (await readDoc()).userRows.u_t1;
   q('[data-renbtn="u_t1"]').click(); await sleep(100);
   const rf = q('[data-renform="u_t1"]');
@@ -668,6 +669,83 @@ export async function phaseGuard() {
   edit(F, 'misc', '7'); d = await docWhen(x => x.custom.values.misc === '7');
   r.ok('no doc yet: first save creates it', d && d.custom.values.misc === '7' && clean(F));
   F.f.remove();
+  localStorage.removeItem(LOCAL_KEY);
+  return r.result();
+}
+
+/* ---- rename built-in rows (2026-10-07) ----
+   Every row can be renamed, not only user rows. A fixed row's name lives in
+   rowLabels[id]; the id, PRESETS, reference line, value, currency, lock and
+   details never move. An empty name on a fixed row restores the original. */
+export async function phaseRename() {
+  await guard();
+  const r = reporter();
+  const fx = JSON.parse(JSON.stringify(FIXTURE));
+  fx.rowLabels = { zz_gone: 'שורה שכבר לא קיימת' };
+  await setDoc(ref(), fx);
+  localStorage.removeItem(LOCAL_KEY);
+  let f = await openFrame('');
+  let w = f.contentWindow, qq = s => w.document.querySelector(s);
+  for (let i = 0; i < 30 && !qq('#loadBanner').hidden; i++) await sleep(200);
+  const name = id => qq(`[data-item="${id}"] .name`).textContent;
+  const rename = async (id, text) => {
+    qq(`[data-renbtn="${id}"]`).click(); await sleep(50);
+    const form = qq(`[data-renform="${id}"]`);
+    form.querySelector('input').value = text; form.requestSubmit(); await sleep(50);
+  };
+  const totalBefore = qq('#totEur').textContent;
+  const refBefore = qq('[data-tier-ref="flight"]').textContent;
+
+  r.ok('every fixed cost row has a rename button, next to its details button', ['flight', 'airport', 'nightly', 'daily', 'barca', 'ucl', 'tour', 'metro', 'trip', 'museums', 'misc'].every(id => { const b = qq(`[data-renbtn="${id}"]`); return !!b && b.parentElement === qq(`[data-metabtn="${id}"]`).parentElement; }));
+  qq('[data-renbtn="airport"]').click(); await sleep(50);
+  const form = qq('[data-renform="airport"]');
+  r.ok('rename form opens with the current name, original as placeholder', !form.hidden && form.querySelector('input').value === 'נמל תעופה ↔ העיר' && form.querySelector('input').placeholder === 'נמל תעופה ↔ העיר');
+  qq('[data-ren-in="airport"]').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await sleep(50);
+  r.ok('Escape cancels', form.hidden && name('airport') === 'נמל תעופה ↔ העיר');
+
+  await rename('airport', '  מונית לנמל <b>תעופה</b> 1.11  ');
+  let d = await readDoc();
+  r.ok('renamed: trimmed, shown as text not HTML', name('airport') === 'מונית לנמל <b>תעופה</b> 1.11' && !qq('[data-item="airport"] .name b'));
+  r.ok('rename persisted in rowLabels', d.rowLabels && d.rowLabels.airport === 'מונית לנמל <b>תעופה</b> 1.11', d.rowLabels);
+  r.ok('value, currency, rowMeta untouched; no other row renamed', d.custom.values.airport === '' && d.custom.currencies.airport === 'EUR' && !('airport' in d.rowMeta) && Object.keys(d.rowLabels).sort().join() === 'airport,zz_gone');
+  r.ok('unknown rowLabels entry preserved', d.rowLabels.zz_gone === 'שורה שכבר לא קיימת');
+
+  // locked fixed row: name changes, lock / total / reference do not
+  const lockBefore = canonJson(d.locks.flight);
+  await rename('flight', 'טיסה הלוך · אל על');
+  d = await readDoc();
+  r.ok('locked fixed row can be renamed; lock untouched', d.rowLabels.flight === 'טיסה הלוך · אל על' && canonJson(d.locks.flight) === lockBefore && qq('[data-item="flight"]').classList.contains('locked'));
+  r.ok('rename does not move the total or the reference line', qq('#totEur').textContent === totalBefore && qq('[data-tier-ref="flight"]').textContent === refBefore, { total: qq('#totEur').textContent, ref: qq('[data-tier-ref="flight"]').textContent });
+  r.ok('rename kept the details', d.rowMeta.flight.desc === 'אל על · הלוך' && d.rowMeta.flight.url === 'https://example.com/flight');
+
+  // user rows still rename as before (into userRows, not rowLabels)
+  await rename('u_t1', 'שורה שלי');
+  d = await readDoc();
+  r.ok('user row rename still goes to userRows', d.userRows.u_t1.label === 'שורה שלי' && !('u_t1' in d.rowLabels));
+  await rename('u_t1', '   ');
+  r.ok('user row: empty name still ignored', name('u_t1') === 'שורה שלי');
+
+  // reload: names come back from the doc
+  f.remove();
+  f = await openFrame(''); w = f.contentWindow; qq = s => w.document.querySelector(s);
+  for (let i = 0; i < 30 && !qq('#loadBanner').hidden; i++) await sleep(200);
+  r.ok('after reload: both renames shown', name('airport') === 'מונית לנמל <b>תעופה</b> 1.11' && name('flight') === 'טיסה הלוך · אל על' && name('nightly') === 'לינה 1–8.11');
+
+  // preset tier: new name shown, rename hidden; back to custom: visible again
+  qq('.tier[data-tier="mid"]').click(); await sleep(250);
+  const hiddenRen = el => !el || !el.getClientRects().length;
+  r.ok('preset tier: renamed label shown, rename control hidden', name('airport') === 'מונית לנמל <b>תעופה</b> 1.11' && hiddenRen(qq('[data-renbtn="airport"]')));
+  qq('.tier[data-tier="custom"]').click(); await sleep(250);
+  r.ok('custom: rename control visible again', !hiddenRen(qq('[data-renbtn="airport"]')));
+
+  // empty name on a fixed row = back to the original; so is typing the original
+  await rename('airport', '');
+  await rename('flight', 'טיסה הלוך');
+  d = await readDoc();
+  r.ok('empty name restores the original and removes the entry', name('airport') === 'נמל תעופה ↔ העיר' && !('airport' in d.rowLabels));
+  r.ok('typing the original name removes the entry', name('flight') === 'טיסה הלוך' && !('flight' in d.rowLabels));
+  r.ok('no NaN anywhere', !/NaN/.test(w.document.body.innerText));
+  f.remove();
   localStorage.removeItem(LOCAL_KEY);
   return r.result();
 }
