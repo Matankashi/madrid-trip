@@ -19,6 +19,7 @@
         await t.phaseLoad();                  // load-time overwrite paths (reseeds itself, ~20s)
         await t.phaseStay();                  // flat accommodation total + lock (reseeds itself)
         await t.phaseMigrate();               // shirt/scale/internet -> user rows (reseeds itself)
+        await t.phaseGuard();                 // another tab/device changed the doc -> refuse to save (reseeds itself)
         await t.dropTestDoc();                // deletes budget_test
    Every function returns {passed, failed, failures:[...]}.
 
@@ -39,7 +40,9 @@ async function guard() {
   return src;
 }
 const ref = () => doc(db, 'users', auth.currentUser.uid, 'state', 'budget_test');
-const readDoc = async () => { await sleep(1800); return (await getDoc(ref())).data(); };
+// waits until no page (this one or a test iframe) has a save pending — see __budgetIdle in serve-test.py
+const allIdle = () => [window, ...[...document.querySelectorAll('iframe')].map(f => f.contentWindow)].every(w => !w.__budgetIdle || w.__budgetIdle());
+const readDoc = async () => { await sleep(300); for (let i = 0; i < 80 && !allIdle(); i++) await sleep(150); return (await getDoc(ref())).data(); };
 
 function reporter() {
   const failures = []; let passed = 0;
@@ -576,5 +579,86 @@ export async function phaseLegacy() {
   setVal(q('[data-link-in="barca"]'), 'https://example.com/ticket');
   const d2 = await readDoc();
   r.ok('first link on a legacy doc persists', d2.rowMeta.barca && d2.rowMeta.barca.url === 'https://example.com/ticket');
+  return r.result();
+}
+
+/* ---- save guard (2026-10-07) ----
+   Every save writes the whole doc, so a page loaded before a change made
+   elsewhere used to overwrite it (that is how a lock and a link were lost).
+   Now a save is refused, and the page goes read-only with a notice, when
+   the doc on the server is not what this page loaded or last wrote. */
+export async function phaseGuard() {
+  await guard();
+  const r = reporter();
+  await setDoc(ref(), FIXTURE);
+  localStorage.removeItem(LOCAL_KEY);
+  const MSG = 'השתנה במכשיר אחר — רענן';
+  const open = async () => { const f = await openFrame(''); const qq = await frameReady(f); return { f, w: f.contentWindow, qq }; };
+  const edit = (p, id, v) => { const el = p.qq(`[data-in="${id}"]`); el.value = v; el.dispatchEvent(new p.w.Event('input', { bubbles: true })); };
+  const conflicted = p => !p.qq('#loadBanner').hidden && p.qq('#loadBanner').textContent === MSG && isInert(p.qq('[data-in="misc"]'));
+  const clean = p => p.qq('#loadBanner').hidden && !isInert(p.qq('[data-in="misc"]'));
+  // a guarded save is a read + a write; poll instead of a fixed wait (the test tab may be throttled)
+  const docWhen = async pred => { let d; for (let i = 0; i < 40; i++) { await sleep(250); d = (await getDoc(ref())).data(); if (d && pred(d)) break; } return d; };
+
+  // 1. one tab: many saves in a row, including a lock (numbers) and a link, never a false conflict
+  const A = await open();
+  edit(A, 'misc', '60'); let d = await docWhen(x => x.custom.values.misc === '60');
+  r.ok('single tab: first save goes through', d.custom.values.misc === '60' && clean(A));
+  edit(A, 'misc', '61'); await sleep(100); edit(A, 'misc', '62'); d = await docWhen(x => x.custom.values.misc === '62');
+  r.ok('single tab: next saves go through too', d.custom.values.misc === '62' && clean(A));
+  A.qq('[data-lockbtn="misc"]').click(); d = await docWhen(x => x.locks.misc);
+  r.ok('single tab: lock saves', d.locks.misc && d.locks.misc.amount === '62' && clean(A), d.locks.misc);
+  A.qq('#metaToggle').click(); await sleep(50);
+  const li = A.qq('[data-link-in="misc"]'); li.value = 'https://example.com/r'; li.dispatchEvent(new A.w.Event('input', { bubbles: true }));
+  d = await docWhen(x => x.rowMeta.misc);
+  r.ok('single tab: link on a locked row saves', d.rowMeta.misc && d.rowMeta.misc.url === 'https://example.com/r' && clean(A));
+  A.qq('[data-lockbtn="misc"]').click(); await sleep(50);
+  // quick edits while a save is in flight must not trip the guard either
+  for (const v of ['63', '64', '65']) { edit(A, 'misc', v); await sleep(900); }
+  d = await docWhen(x => x.custom.values.misc === '65');
+  r.ok('single tab: edits during an in-flight save do not conflict', d.custom.values.misc === '65' && clean(A), { misc: d.custom.values.misc, banner: A.qq('#loadBanner').textContent });
+
+  // 2. two tabs: the one that loaded earlier is refused
+  const B = await open();
+  B.qq('[data-lockbtn="u_t1"]').click(); d = await docWhen(x => x.locks.u_t1);
+  r.ok('tab B (fresh) locks a row', d.locks.u_t1 && clean(B));
+  const before = canonJson(d);
+  edit(A, 'daily', '40'); for (let i = 0; i < 40 && !conflicted(A); i++) await sleep(250);
+  d = (await getDoc(ref())).data();
+  r.ok('tab A (stale) is refused: doc unchanged, B\'s lock kept', canonJson(d) === before && d.locks.u_t1);
+  r.ok('tab A shows the notice and goes read-only', conflicted(A), A.qq('#loadBanner').textContent);
+  edit(A, 'daily', '41'); await readDoc();
+  r.ok('tab A stays refused on further edits', canonJson((await getDoc(ref())).data()) === before);
+  r.ok('tab B unaffected', clean(B));
+  A.f.remove(); B.f.remove();
+
+  // 3. an old tab without the guard (blind whole-doc write) is also detected
+  const C = await open();
+  const old = (await getDoc(ref())).data(); old.custom.values.metro = '99';
+  await setDoc(ref(), old);
+  edit(C, 'museums', '10'); for (let i = 0; i < 40 && !conflicted(C); i++) await sleep(250);
+  d = (await getDoc(ref())).data();
+  r.ok('blind write elsewhere: this tab is refused, the other write survives', d.custom.values.metro === '99' && d.custom.values.museums !== '10' && conflicted(C));
+  C.f.remove();
+
+  // 4. coming back to the tab shows the notice before any edit
+  const D = await open();
+  const old2 = (await getDoc(ref())).data(); old2.custom.values.metro = '98';
+  await setDoc(ref(), old2);
+  D.w.dispatchEvent(new D.w.Event('focus')); for (let i = 0; i < 40 && !conflicted(D); i++) await sleep(250);
+  r.ok('focus after a change elsewhere: notice shown without editing', conflicted(D));
+  D.f.remove();
+  const E = await open();
+  E.w.dispatchEvent(new E.w.Event('focus')); await sleep(1500);
+  r.ok('focus with no change elsewhere: no notice', clean(E));
+  E.f.remove();
+
+  // 5. no doc yet: the first save creates it
+  await deleteDoc(ref());
+  const F = await open();
+  edit(F, 'misc', '7'); d = await docWhen(x => x.custom.values.misc === '7');
+  r.ok('no doc yet: first save creates it', d && d.custom.values.misc === '7' && clean(F));
+  F.f.remove();
+  localStorage.removeItem(LOCAL_KEY);
   return r.result();
 }

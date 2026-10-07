@@ -13,6 +13,8 @@ Usage:  python3 tests/serve-test.py [port]      (default 8000)
   can open  budget.html?loadtest=slow  (load resolves after 3s) or
   budget.html?loadtest=fail  (load rejects) to exercise the pre-load and
   failed-load paths. Without ?loadtest it is a plain getDoc.
+- Exposes window.__budgetIdle() (no save waiting or in flight), which
+  readDoc() in tests/budget-checks.js waits on instead of a fixed sleep.
 
 Seed budget_test first (see tests/budget-checks.js), then open
 http://localhost:PORT/budget.html while signed in.
@@ -33,6 +35,8 @@ function __loadDoc(ref){
   if (mode === 'slow') return new Promise(r => setTimeout(r, 3000)).then(() => getDoc(ref));
   return getDoc(ref);
 }
+// lets tests wait for this page's guarded save (debounce + read + write) to finish
+window.__budgetIdle = () => !savePending;
 """
 
 class Handler(http.server.SimpleHTTPRequestHandler):

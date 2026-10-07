@@ -1,6 +1,6 @@
 import { auth, db } from './firebase-init.js';
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
-import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+import { doc, getDoc, runTransaction } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 
 /* שמירת המחשבון. מקור האמת הוא Firestore, ב-/users/{uid}/state/budget,
    עם גיבוי אופליין ב-localStorage — אותו דפוס כמו dossier.js. שני
@@ -16,7 +16,11 @@ import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.18.0/
       *יורה*, לא ברגע שהיא *נקבעה* — כך שאם לוחצים על רמת תקציב ואז
       עורכים שדה בתוך חלון ה-800ms, הכתיבה שבסוף כוללת גם את העריכה.
    עד שהטעינה הראשונית מסתיימת אי אפשר לערוך ושום דבר לא נשמר, וטעינה
-   שנכשלה משאירה את הדף לקריאה בלבד — ראו setLoadState. */
+   שנכשלה משאירה את הדף לקריאה בלבד — ראו setLoadState.
+   3. כל שמירה כותבת את המסמך כולו, אז דף שנטען לפני שינוי במכשיר/טאב
+      אחר היה דורס אותו (כך אבדו נעילה וקישור). לכן שמירה היא טרנזקציה
+      שמסרבת אם המסמך בשרת כבר לא זהה למה שהדף הזה טען או כתב בפעם
+      האחרונה — ראו saveNow. */
 
 const FIXED_FIELD_IDS = ['flight','airport','nightly','daily','barca','ucl','tour','metro','trip','tripCount','museums','misc'];
 /* FIELD_IDS/CURRENCY_IDS = השורות הקבועות + שורות המשתמש (userRows).
@@ -933,12 +937,15 @@ let saveTimer = null;
    - 'failed': הטעינה נכשלה. מוצג העותק המקומי (אם יש) לקריאה בלבד עד
      רענון — עריכה שלו הייתה שומרת עותק ישן מעל המסמך.
    - 'ready': המסמך נטען (או עוד לא קיים) — רק כאן שומרים.
+   - 'conflict': המסמך השתנה מאז שהדף נטען (מכשיר/טאב אחר). לקריאה
+     בלבד עד רענון — כל שמירה מכאן הייתה מוחקת את השינוי ההוא.
    החסימה ב-scheduleSave היא ההגנה האמיתית; inert רק מונע את הניסיון. */
 let loadState = 'pending';
 const LOAD_MSG = {
   pending: 'טוען את התקציב…',
   failed: 'הטעינה מהשרת נכשלה. מוצג העותק האחרון שנשמר במכשיר הזה, לקריאה בלבד — שום שינוי לא יישמר. רעננו את הדף כדי לנסות שוב.',
-  failedNoLocal: 'הטעינה מהשרת נכשלה ואין עותק שמור במכשיר הזה. לקריאה בלבד — שום שינוי לא יישמר. רעננו את הדף כדי לנסות שוב.'
+  failedNoLocal: 'הטעינה מהשרת נכשלה ואין עותק שמור במכשיר הזה. לקריאה בלבד — שום שינוי לא יישמר. רעננו את הדף כדי לנסות שוב.',
+  conflict: 'השתנה במכשיר אחר — רענן'
 };
 function setLoadState(state, msgKey){
   loadState = state;
@@ -948,24 +955,75 @@ function setLoadState(state, msgKey){
   if (banner) {
     banner.hidden = !blocked;
     banner.textContent = LOAD_MSG[msgKey || state];
-    banner.classList.toggle('failed', state === 'failed');
+    banner.classList.toggle('failed', state === 'failed' || state === 'conflict');
   }
 }
 setLoadState('pending');
+
+/* הגנה מדריסה בין מכשירים. lastKnown = המסמך בשרת כפי שהדף הזה מכיר
+   אותו (נטען, או נכתב על ידו בפעם האחרונה) — JSON קנוני עם מפתחות
+   ממוינים, null = אין עדיין מסמך. שמירה היא טרנזקציה: קוראת את המסמך,
+   ואם הוא שונה מ-lastKnown — מישהו אחר כתב בינתיים, אז לא כותבים ועוברים
+   ל-'conflict'. השוואת תוכן (ולא מונה גרסה) תופסת גם כתיבה מטאב ישן
+   שלא מכיר את ההגנה הזו. שמירות של הדף עצמו רצות בתור (saveChain), כדי
+   שהשמירה השנייה לא תראה את הראשונה כ"שינוי ממכשיר אחר". */
+const canon = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x)) ? Object.fromEntries(Object.keys(x).sort().map(y => [y, x[y]])) : x);
+const docCanon = snap => (snap.exists() ? canon(snap.data()) : null);
+const CONFLICT = new Error('budget doc changed since this page loaded');
+let lastKnown = null;
+let saveChain = Promise.resolve();
+let savePending = false; // יש שמירה שמחכה ל-debounce או רצה כרגע
+
+function saveNow(){
+  saveTimer = null;
+  if (loadState !== 'ready') { savePending = false; return Promise.resolve(); }
+  const state = getState();
+  const next = canon(state);
+  return runTransaction(db, async tx => {
+    const cur = docCanon(await tx.get(docRef));
+    if (cur !== lastKnown) throw CONFLICT;
+    tx.set(docRef, state);
+  }).then(() => {
+    lastKnown = next;
+  }, err => {
+    if (err === CONFLICT) {
+      console.error('madrid-trip: budget save refused, the doc changed on another device');
+      setLoadState('conflict');
+    } else {
+      // עדיין נשמר ב-localStorage, אבל כשל שקט פה נראה בדיוק כמו הצלחה —
+      // בלי הלוג הזה קשה להבחין בין "לא נכתב" ל"נכתב ולא הגיע".
+      console.error('madrid-trip: budget save failed', err);
+    }
+  }).finally(() => {
+    if (!saveTimer) savePending = false;
+  });
+}
 
 function scheduleSave(){
   if (loadState !== 'ready') return; // ראו setLoadState
   saveLocal(getState());
   if (!docRef) return;
+  savePending = true;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(function(){
-    setDoc(docRef, getState()).catch(function(err){
-      // עדיין נשמר ב-localStorage, אבל כשל שקט פה נראה בדיוק כמו הצלחה —
-      // בלי הלוג הזה קשה להבחין בין "לא נכתב" ל"נכתב ולא הגיע".
-      console.error('madrid-trip: budget setDoc failed', err);
-    });
+    saveChain = saveChain.then(saveNow);
   }, DEBOUNCE_MS);
 }
+
+/* חזרה לדף (מעבר טאב/אפליקציה): בודקים מיד אם המסמך השתנה במקום אחר,
+   כדי שההודעה תופיע לפני שמקלידים — לא רק כשהשמירה מסורבת. רק כשאין
+   שמירה של הדף עצמו באוויר, אחרת הכתיבה שלו תיראה כשינוי זר. */
+function checkRemote(){
+  if (loadState !== 'ready' || !docRef || savePending) return;
+  getDoc(docRef).then(snap => {
+    if (loadState === 'ready' && !savePending && docCanon(snap) !== lastKnown) {
+      console.error('madrid-trip: the budget doc changed on another device');
+      setLoadState('conflict');
+    }
+  }).catch(err => console.error('madrid-trip: remote change check failed', err));
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkRemote(); });
+window.addEventListener('focus', checkRemote);
 
 $$('.tier').forEach(b => b.addEventListener('click', () => applyTier(b.dataset.tier)));
 const refToggleInput = $('#refToggle');
@@ -1108,6 +1166,7 @@ onAuthStateChanged(auth, function(user){
   docRef = doc(db, 'users', user.uid, 'state', 'budget');
 
   getDoc(docRef).then(function(snap){
+    lastKnown = docCanon(snap);
     if (snap.exists()) {
       applyState(snap.data());
     } else {
