@@ -89,7 +89,27 @@ let userRows = {};
 let rowLabels = {};
 const LABEL_MAX = 60;
 const isUserRow = id => Object.prototype.hasOwnProperty.call(userRows, id);
-const isReserveRow = id => isUserRow(id) || PLANLESS_FIXED_ROWS.includes(id);
+/* פיצול (v1.19): שורה שנוצרה מ"פצל" היא שורת משתמש עם splitFrom = שורת
+   התכנון שממנה היא באה (תמיד השורש — פיצול של פיצול מצביע לאותו שורש),
+   ו-after = השורה שפוצלה, שמתחתיה היא מוצגת. splitFrom לא תקין (השורה
+   נמחקה) = שורת משתמש רגילה. */
+function splitRootOf(id){
+  const r = isUserRow(id) && userRows[id].splitFrom;
+  return (typeof r === 'string' && r !== id && (FIXED_FIELD_IDS.includes(r) || isUserRow(r))) ? r : null;
+}
+const splitChildrenOf = id => userRowIds().filter(c => splitRootOf(c) === id);
+/* שורה בלי תכנון נספרת מול הרזרבה. פיצול של שורה קבועה עם תכנון הוא חלק
+   מהתכנון שלה (לא רזרבה); פיצול של שורת משתמש נשאר רזרבה כמו השורש. */
+const isReserveRow = id => {
+  if (!isUserRow(id)) return PLANLESS_FIXED_ROWS.includes(id);
+  const root = splitRootOf(id);
+  return !(root && !isUserRow(root) && root !== 'tripCount' && !PLANLESS_FIXED_ROWS.includes(root));
+};
+// בשכבת מחיר מוצג רק התכנון המקורי: כל שורת משתמש (כולל פיצול — השורש
+// מציג את מחיר הייחוס המלא) וכל שורה קבועה בלי תכנון מוסתרות ולא נספרות.
+const hiddenInPresets = id => isUserRow(id) || PLANLESS_FIXED_ROWS.includes(id);
+// פיצול יורש את המתג של השורש (סיור/ליגת אלופות/טיולים כבויים -> גם הוא 0)
+const toggleOff = id => { const k = splitRootOf(id) || id; return k in toggles && !toggles[k]; };
 const userRowIds = () => Object.keys(userRows).sort((x, y) => (userRows[x].createdAt || 0) - (userRows[y].createdAt || 0) || (x < y ? -1 : 1));
 function refreshIds(){
   FIELD_IDS = FIXED_FIELD_IDS.concat(userRowIds());
@@ -197,8 +217,8 @@ function isLockActive(id){
 }
 
 function lineValueNative(id){
-  if(id in toggles && !toggles[id]) return 0;
-  if(tier !== 'custom' && isReserveRow(id)) return 0; // מוסתרת בשכבת מחיר
+  if(toggleOff(id)) return 0;
+  if(tier !== 'custom' && hiddenInPresets(id)) return 0; // מוסתרת בשכבת מחיר
   if(isLockActive(id)) return Number(locks[id].amount) || 0;
   const inp = document.querySelector(`[data-in="${id}"]`);
   if(!inp) return 0;
@@ -212,7 +232,7 @@ function lineValueNative(id){
 }
 
 function lineValueEur(id){
-  if(id in toggles && !toggles[id]) return 0;
+  if(toggleOff(id)) return 0;
   if(isLockActive(id)){
     const rate = Number(locks[id].rate) || 1;
     return (Number(locks[id].amount) || 0) / rate;
@@ -240,9 +260,9 @@ function render(){
     grand += sum;
   });
 
-  Object.keys(toggles).forEach(id => {
+  Object.keys(toggles).concat(userRowIds()).forEach(id => {
     const row = document.querySelector(`[data-item="${id}"]`);
-    if(row) row.classList.toggle('off', !toggles[id]);
+    if(row) row.classList.toggle('off', toggleOff(id));
   });
 
   // מצב הנעילה מוצג/מיושם רק ב-custom: כפתור המנעול עצמו זמין רק שם
@@ -284,9 +304,13 @@ function render(){
     if (!refEl) return;
     if (showRefsNow) {
       refEl.hidden = false;
+      const root = splitRootOf(id);
+      const kids = splitChildrenOf(id);
       refEl.textContent = isReserveRow(id)
         ? 'ייחוס: נספר ברזרבה'
-        : 'ייחוס: ' + ['lean', 'mid', 'rich'].map(t => eur(PRESETS[t][id])).join(' · ');
+        : root
+          ? 'ייחוס: חלק מ"' + labelOf(root) + '"'
+          : 'ייחוס' + (kids.length ? ' (כולל ' + kids.map(labelOf).join(', ') + ')' : '') + ': ' + ['lean', 'mid', 'rich'].map(t => eur(PRESETS[t][id])).join(' · ');
     } else {
       refEl.hidden = true;
     }
@@ -354,7 +378,7 @@ function render(){
   GROUPS.forEach(g => {
     let anyVisible = false;
     groupItems(g).forEach(id => {
-      const hide = readOnly && isReserveRow(id);
+      const hide = readOnly && hiddenInPresets(id);
       const row = document.querySelector(`[data-item="${id}"]`);
       if (row) row.style.display = hide ? 'none' : '';
       if (!hide) anyVisible = true;
@@ -650,6 +674,7 @@ function buildUserRowEl(id){
     `<div class="amt" data-amt="${id}"></div>`;
   row.querySelector('.name').textContent = userRows[id].label;
   ensureMetaEl(row, id);
+  ensureSplitEl(row, id);
   return row;
 }
 
@@ -663,6 +688,35 @@ function insertUserRowEl(id){
   const rowsEl = groupRowsEl(userRows[id].group);
   if (!rowsEl) return;
   rowsEl.insertBefore(buildUserRowEl(id), rowsEl.querySelector('[data-addwrap]'));
+}
+
+/* סדר השורות בקבוצה: השורות הקבועות ושורות המשתמש לפי createdAt, וכל
+   פיצול מיד מתחת לשורה שפוצלה (after), פיצולים של אותה שורה לפי createdAt.
+   after שלא קיים בקבוצה (נמחק) -> השורה בסוף כמו שורת משתמש רגילה. */
+function orderedGroupItems(g){
+  const users = userRowIds().filter(id => userRows[id].group === g.key);
+  const inGroup = new Set(g.items.concat(users));
+  const anchorOf = id => { const a = userRows[id] && userRows[id].after; return (typeof a === 'string' && a !== id && inGroup.has(a)) ? a : null; };
+  const out = [];
+  const place = id => {
+    if (out.includes(id)) return;
+    out.push(id);
+    users.filter(c => anchorOf(c) === id).forEach(place);
+  };
+  g.items.concat(users.filter(id => !anchorOf(id))).forEach(place);
+  users.forEach(id => { if (!out.includes(id)) out.push(id); }); // מעגל after בנתונים פגומים
+  return out;
+}
+function orderGroupRows(){
+  GROUPS.forEach(g => {
+    const rowsEl = groupRowsEl(g.key);
+    if (!rowsEl) return;
+    const end = rowsEl.querySelector('[data-addwrap]');
+    orderedGroupItems(g).forEach(id => {
+      const el = rowsEl.querySelector(`[data-item="${id}"]`);
+      if (el) rowsEl.insertBefore(el, end);
+    });
+  });
 }
 
 /* טוען userRows ממסמך שמור. פריט פגום (בלי תווית / id לא תקין) לא נטען
@@ -691,6 +745,7 @@ function loadUserRows(saved){
     defaults.values[id] = '';
     insertUserRowEl(id);
   });
+  orderGroupRows();
 }
 
 function createUserRow(groupKey, label){
@@ -775,6 +830,7 @@ function renameRow(id, label){
   }
   const nameEl = document.querySelector(`[data-item="${id}"] .name`);
   if (nameEl) nameEl.textContent = labelOf(id);
+  render(); // שורות ייחוס של פיצולים מציגות את השם
   scheduleSave();
   return true;
 }
@@ -811,6 +867,93 @@ function ensureRenameEl(row, id){
     `</form>`);
   // השם המקורי כ-placeholder: שמירה של שדה ריק מחזירה אליו
   actions.querySelector('[data-ren-in]').placeholder = defaults.labels[id] || '';
+}
+
+/* ---- פיצול שורה ---- */
+/* "פצל" בכל שורת עלות, רק ב-custom: השורה המקורית שומרת את ה-id, הנעילה,
+   הערך, המטבע, הפרטים ומחיר הייחוס; השורה החדשה היא שורת משתמש פתוחה
+   באותה קבוצה ובאותו מטבע, מיד מתחת למקורית, שנספרת בתכנון של השורש
+   (splitFrom) ולא ברזרבה. אפשר לשנות את שם המקורית באותו טופס. העברת
+   סכום רק משורה פתוחה עם סכום כולל: נעילה היא חיוב אמיתי ולא מתחלקת,
+   ובשורה ליחידה (ליום/לטיול) העברה הייתה משנה את הסה"כ פי מספר הימים. */
+const PER_UNIT_ROWS = ['daily', 'trip'];
+const groupOfRow = id => isUserRow(id) ? userRows[id].group : (GROUPS.find(g => g.items.includes(id)) || {}).key;
+const canMoveAmount = id => !locks[id] && !PER_UNIT_ROWS.includes(id);
+
+function ensureSplitEl(row, id){
+  const actions = row.querySelector(`[data-actwrap="${id}"], [data-delwrap="${id}"]`);
+  if (!actions || actions.querySelector('[data-splitbtn]')) return;
+  const html =
+    `<button class="renbtn" data-splitbtn="${id}" type="button">פצל</button>` +
+    `<form class="renform splitform" data-splitform="${id}" hidden>` +
+      `<input type="text" maxlength="${LABEL_MAX}" data-split-orig="${id}" aria-label="שם השורה הזו">` +
+      `<input type="text" maxlength="${LABEL_MAX}" data-split-new="${id}" placeholder="שם השורה החדשה" aria-label="שם השורה החדשה">` +
+      `<input type="number" min="0" step="any" data-split-amt="${id}" placeholder="סכום להעברה (לא חובה)" aria-label="סכום להעברה לשורה החדשה">` +
+      `<div class="splitnote" data-split-note="${id}"></div>` +
+      `<button class="addok" type="submit">פצל</button>` +
+      `<button class="addcancel" data-splitcancel="${id}" type="button">ביטול</button>` +
+    `</form>`;
+  const del = actions.querySelector('[data-delbtn]');
+  if (del) del.insertAdjacentHTML('beforebegin', html); else actions.insertAdjacentHTML('beforeend', html);
+}
+
+function splitNote(id){
+  if (locks[id]) return 'השורה נעולה — הסכום ששולם נשאר בה, והשורה החדשה מתחילה מ-0';
+  if (PER_UNIT_ROWS.includes(id)) return 'זה מחיר ליחידה — השורה החדשה מתחילה מ-0';
+  return 'אפשר להעביר חלק מהסכום (' + fmtMoney(num($(`[data-in="${id}"]`)), currencyOf(id)) + ') לשורה החדשה';
+}
+
+function setSplitting(id, on){
+  const form = document.querySelector(`[data-splitform="${id}"]`);
+  const btn = document.querySelector(`[data-splitbtn="${id}"]`);
+  if (!form) return;
+  form.hidden = !on;
+  if (btn) btn.hidden = on;
+  if (!on) return;
+  form.querySelector('[data-split-orig]').value = labelOf(id);
+  form.querySelector('[data-split-new]').value = '';
+  const amt = form.querySelector('[data-split-amt]');
+  amt.value = '';
+  amt.hidden = !canMoveAmount(id);
+  const note = form.querySelector('[data-split-note]');
+  note.textContent = splitNote(id);
+  note.classList.remove('err');
+  form.querySelector('[data-split-new]').focus();
+}
+
+// מחזירה null בהצלחה, או הודעת שגיאה (ואז לא השתנה כלום).
+function splitRow(id, origLabel, newLabel, moveRaw){
+  if (tier !== 'custom' || !CURRENCY_IDS.includes(id) || !groupOfRow(id)) return 'אי אפשר לפצל את השורה הזו';
+  const newClean = String(newLabel).trim().slice(0, LABEL_MAX);
+  if (!newClean) return 'צריך שם לשורה החדשה';
+  const inp = $(`[data-in="${id}"]`);
+  const cur = inp ? num(inp) : 0;
+  let move = 0;
+  if (canMoveAmount(id) && String(moveRaw).trim() !== '') {
+    move = parseFloat(moveRaw);
+    if (!(move >= 0) || move > cur) return 'הסכום להעברה צריך להיות בין 0 ל-' + fmtMoney(cur, currencyOf(id));
+  }
+  const origClean = String(origLabel).trim();
+  if (origClean && origClean !== labelOf(id)) renameRow(id, origClean);
+
+  const newId = 'u_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  const currency = currencyOf(id);
+  userRows[newId] = {label: newClean, group: groupOfRow(id), createdAt: Date.now(), splitFrom: splitRootOf(id) || id, after: id};
+  customCurrencies[newId] = currency;
+  customValues[newId] = move ? String(move) : '';
+  defaults.values[newId] = '';
+  if (move) {
+    inp.value = String(Math.round((cur - move) * 100) / 100);
+    customValues[id] = inp.value;
+  }
+  refreshIds();
+  insertUserRowEl(newId);
+  orderGroupRows();
+  $(`[data-cur="${newId}"]`).value = currency;
+  $(`[data-in="${newId}"]`).value = customValues[newId];
+  render();
+  scheduleSave();
+  return null;
 }
 
 function closeAddForm(key){
@@ -1173,6 +1316,10 @@ document.addEventListener('click', e => {
   if (cancel) { closeAddForm(cancel.dataset.addcancel); return; }
   const del = t.closest('[data-delbtn]');
   if (del) { if (tier === 'custom' && !locks[del.dataset.delbtn]) setDelConfirm(del.dataset.delbtn, true); return; }
+  const sp = t.closest('[data-splitbtn]');
+  if (sp) { if (tier === 'custom') setSplitting(sp.dataset.splitbtn, true); return; }
+  const spCancel = t.closest('[data-splitcancel]');
+  if (spCancel) { setSplitting(spCancel.dataset.splitcancel, false); return; }
   const ren = t.closest('[data-renbtn]');
   if (ren) { if (tier === 'custom') setRenaming(ren.dataset.renbtn, true); return; }
   const renCancel = t.closest('[data-rencancel]');
@@ -1184,6 +1331,8 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && e.target.matches && e.target.matches('[data-ren-in]')) setRenaming(e.target.dataset.renIn, false);
+  const spForm = e.key === 'Escape' && e.target.closest && e.target.closest('[data-splitform]');
+  if (spForm) setSplitting(spForm.dataset.splitform, false);
 });
 document.addEventListener('click', e => {
   const mb = e.target.closest('[data-metabtn]');
@@ -1194,6 +1343,20 @@ document.addEventListener('click', e => {
   if (metaOpen.has(id)) { const d = document.querySelector(`[data-desc-in="${id}"]`); if (d) d.focus(); }
 });
 document.addEventListener('submit', e => {
+  const spForm = e.target.closest('[data-splitform]');
+  if (spForm) {
+    e.preventDefault();
+    const id = spForm.dataset.splitform;
+    const err = splitRow(id, spForm.querySelector('[data-split-orig]').value, spForm.querySelector('[data-split-new]').value, spForm.querySelector('[data-split-amt]').value);
+    if (err) {
+      const note = spForm.querySelector('[data-split-note]');
+      note.textContent = err;
+      note.classList.add('err');
+    } else {
+      setSplitting(id, false);
+    }
+    return;
+  }
   const renForm = e.target.closest('[data-renform]');
   if (renForm) {
     e.preventDefault();
@@ -1212,7 +1375,7 @@ document.addEventListener('submit', e => {
 });
 buildAddRowWrappers();
 $$('.row[data-item]').forEach(row => ensureMetaEl(row, row.dataset.item));
-FIXED_FIELD_IDS.filter(isFixedRow).forEach(id => { const row = $(`[data-item="${id}"]`); if (row) ensureRenameEl(row, id); });
+FIXED_FIELD_IDS.filter(isFixedRow).forEach(id => { const row = $(`[data-item="${id}"]`); if (row) { ensureRenameEl(row, id); ensureSplitEl(row, id); } });
 
 function refreshRate(key){
   const btn = document.querySelector(`[data-refresh="${key}"]`);

@@ -21,6 +21,7 @@
         await t.phaseMigrate();               // shirt/scale/internet -> user rows (reseeds itself)
         await t.phaseGuard();                 // another tab/device changed the doc -> refuse to save (reseeds itself)
         await t.phaseRename();                // rename built-in rows (reseeds itself)
+        await t.phaseSplit();                 // split a row into two (reseeds itself)
         await t.dropTestDoc();                // deletes budget_test
    Every function returns {passed, failed, failures:[...]}.
 
@@ -744,6 +745,114 @@ export async function phaseRename() {
   d = await readDoc();
   r.ok('empty name restores the original and removes the entry', name('airport') === 'נמל תעופה ↔ העיר' && !('airport' in d.rowLabels));
   r.ok('typing the original name removes the entry', name('flight') === 'טיסה הלוך' && !('flight' in d.rowLabels));
+  r.ok('no NaN anywhere', !/NaN/.test(w.document.body.innerText));
+  f.remove();
+  localStorage.removeItem(LOCAL_KEY);
+  return r.result();
+}
+
+/* ---- split a row (v1.19) ----
+   "פצל" turns one row into two. The original keeps its id, lock, value,
+   currency, details and tier reference; the new row is a user row right
+   under it, same group and currency, unlocked, counted in the original's
+   plan (splitFrom), not in the reserve. An amount can move only out of an
+   unlocked row whose field is a total (not per day / per trip). */
+export async function phaseSplit() {
+  const src = await guard();
+  const P = presetsFrom(src);
+  const r = reporter();
+  const fx = JSON.parse(JSON.stringify(FIXTURE));
+  fx.custom.values.ucl = '30';
+  await setDoc(ref(), fx);
+  localStorage.removeItem(LOCAL_KEY);
+  let f = await openFrame('');
+  let w = f.contentWindow, qq = s => w.document.querySelector(s), qa = s => [...w.document.querySelectorAll(s)];
+  for (let i = 0; i < 30 && !qq('#loadBanner').hidden; i++) await sleep(200);
+  const total = () => parseInt(qq('#totEur').textContent.replace(/[^0-9-]/g, ''), 10);
+  const reserve = () => qq('#reserveLine').textContent;
+  const visible = el => !!el && el.getClientRects().length > 0;
+  const split = async (id, { orig, name, amount } = {}) => {
+    qq(`[data-splitbtn="${id}"]`).click(); await sleep(50);
+    const form = qq(`[data-splitform="${id}"]`);
+    if (orig !== undefined) form.querySelector('[data-split-orig]').value = orig;
+    form.querySelector('[data-split-new]').value = name || '';
+    if (amount !== undefined) form.querySelector('[data-split-amt]').value = amount;
+    form.requestSubmit(); await sleep(100);
+    return form;
+  };
+  const idsInGroupOrder = key => [...qq(`[data-pct="${key}"]`).closest('h2').nextElementSibling.querySelectorAll('[data-item]')].map(x => x.dataset.item);
+  const total0 = total(), reserve0 = reserve();
+
+  r.ok('every cost row has a split button in its action line', ['flight', 'airport', 'nightly', 'daily', 'barca', 'ucl', 'tour', 'metro', 'trip', 'museums', 'misc', 'u_t1', 'u_t2'].every(id => { const b = qq(`[data-splitbtn="${id}"]`); return visible(b) && b.parentElement === qq(`[data-metabtn="${id}"]`).parentElement; }));
+
+  // 1. locked row: nothing moves, the lock stays where it is
+  qq('[data-splitbtn="flight"]').click(); await sleep(50);
+  let form = qq('[data-splitform="flight"]');
+  r.ok('form opens with the current name; locked row: no amount field, says why', !form.hidden && form.querySelector('[data-split-orig]').value === 'טיסה הלוך' && !visible(form.querySelector('[data-split-amt]')) && /נעולה/.test(form.querySelector('[data-split-note]').textContent));
+  form.querySelector('[data-split-new]').value = '  '; form.requestSubmit(); await sleep(100);
+  r.ok('empty new name: error, nothing created', !form.hidden && form.querySelector('[data-split-note]').classList.contains('err') && qa('[data-user-row]').length === 2);
+  form.querySelector('[data-splitcancel="flight"]').click(); await sleep(50);
+  await split('flight', { orig: 'טיסה · הלוך', name: 'טיסה חזור' });
+  let d = await readDoc();
+  const ret = Object.keys(d.userRows).find(id => d.userRows[id].label === 'טיסה חזור');
+  r.ok('new row stored with splitFrom/after, same group and currency, empty value', ret && d.userRows[ret].splitFrom === 'flight' && d.userRows[ret].after === 'flight' && d.userRows[ret].group === 'arrive' && d.custom.currencies[ret] === 'ILS' && d.custom.values[ret] === '' && !(ret in d.locks), ret && d.userRows[ret]);
+  r.ok('original renamed in the same step; its lock untouched', d.rowLabels.flight === 'טיסה · הלוך' && d.locks.flight.amount === '486' && d.locks.flight.rate === 3.5);
+  r.ok('new row sits directly under the original', JSON.stringify(idsInGroupOrder('arrive').slice(0, 2)) === JSON.stringify(['flight', ret]), idsInGroupOrder('arrive'));
+  r.ok('total unchanged by the split itself', total() === total0, [total(), total0]);
+  r.ok('reference lines: original "includes", new row "part of"', qq('[data-tier-ref="flight"]').textContent === 'ייחוס (כולל טיסה חזור): €230 · €330 · €480' && qq(`[data-tier-ref="${ret}"]`).textContent === 'ייחוס: חלק מ"טיסה · הלוך"', [qq('[data-tier-ref="flight"]').textContent, qq(`[data-tier-ref="${ret}"]`).textContent]);
+  const el = qq(`[data-in="${ret}"]`); el.value = '350'; el.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(100);
+  r.ok('a value in the new row counts toward the plan, not the reserve', Math.abs(total() - Math.round(EXPECTED_CUSTOM_TOTAL + 30 + 350 / 3.5)) <= 1 && reserve() === reserve0, { total: total(), reserve: reserve(), reserve0 });
+
+  // 2. unlocked row with a total: move part of it
+  await split('barca', { name: 'כרטיס שני', amount: '5000' });
+  form = qq('[data-splitform="barca"]');
+  r.ok('moving more than the row holds: error, nothing changed', !form.hidden && form.querySelector('[data-split-note]').classList.contains('err') && qq('[data-in="barca"]').value === '1053.8');
+  form.querySelector('[data-split-amt]').value = '53.8'; form.requestSubmit(); await sleep(100);
+  d = await readDoc();
+  const b2 = Object.keys(d.userRows).find(id => d.userRows[id].label === 'כרטיס שני');
+  r.ok('amount moved: original 1000, new row 53.8, same currency', d.custom.values.barca === '1000' && d.custom.values[b2] === '53.8' && d.custom.currencies[b2] === 'ILS', [d.custom.values.barca, b2 && d.custom.values[b2]]);
+  r.ok('moving an amount keeps the total', Math.abs(total() - Math.round(EXPECTED_CUSTOM_TOTAL + 30 + 350 / 3.5)) <= 1, total());
+
+  // 3. per-unit row: no amount field
+  qq('[data-splitbtn="daily"]').click(); await sleep(50);
+  r.ok('per-day row: no amount field', !visible(qq('[data-splitform="daily"] [data-split-amt]')));
+  qq('[data-splitcancel="daily"]').click(); await sleep(50);
+
+  // 4. split of a split: same plan root, placed under the row it came from
+  await split(ret, { name: 'טיסה חזור · מזוודה' });
+  d = await readDoc();
+  const bag = Object.keys(d.userRows).find(id => d.userRows[id].label === 'טיסה חזור · מזוודה');
+  r.ok('split of a split: root stays the plan row, placed under its source', bag && d.userRows[bag].splitFrom === 'flight' && d.userRows[bag].after === ret && JSON.stringify(idsInGroupOrder('arrive').slice(0, 3)) === JSON.stringify(['flight', ret, bag]), idsInGroupOrder('arrive'));
+
+  // 5. toggles: a split of a toggled row follows it
+  await split('ucl', { name: 'ליגת אלופות 2', amount: '10' });
+  d = await readDoc();
+  const u2 = Object.keys(d.userRows).find(id => d.userRows[id].label === 'ליגת אלופות 2');
+  const tBefore = total();
+  qq('[data-tog="ucl"]').click(); await sleep(150);
+  r.ok('toggle off: the split half drops out with the original', Math.abs(tBefore - total() - 30) <= 1 && qq(`[data-item="${u2}"]`).classList.contains('off'), [tBefore, total()]);
+  qq('[data-tog="ucl"]').click(); await sleep(150);
+
+  // 6. preset tier: split halves hidden, plan total exact
+  qq('.tier[data-tier="mid"]').click(); await sleep(250);
+  r.ok('preset tier: split rows hidden and not counted', [ret, b2, bag, u2].every(id => !visible(qq(`[data-item="${id}"]`))) && total() === expectedPresetTotal(P, 'mid'), [total(), expectedPresetTotal(P, 'mid')]);
+  r.ok('preset tier: split buttons hidden', !visible(qq('[data-splitbtn="flight"]')));
+  qq('.tier[data-tier="custom"]').click(); await sleep(250);
+
+  // 7. reload: order and links survive
+  await readDoc();
+  f.remove();
+  f = await openFrame(''); w = f.contentWindow; qq = s => w.document.querySelector(s); qa = s => [...w.document.querySelectorAll(s)];
+  for (let i = 0; i < 30 && !qq('#loadBanner').hidden; i++) await sleep(200);
+  r.ok('after reload: rows still directly under their originals', JSON.stringify(idsInGroupOrder('arrive').slice(0, 3)) === JSON.stringify(['flight', ret, bag]) && idsInGroupOrder('ball').indexOf(b2) === idsInGroupOrder('ball').indexOf('barca') + 1, [idsInGroupOrder('arrive'), idsInGroupOrder('ball')]);
+  r.ok('after reload: same total, reserve untouched', Math.abs(total() - Math.round(EXPECTED_CUSTOM_TOTAL + 30 + 350 / 3.5)) <= 1 && reserve() === reserve0);
+
+  // 8. a split row can be deleted like any user row; the rest stays
+  qq(`[data-delbtn="${bag}"]`).click(); await sleep(50); qq(`[data-delyes="${bag}"]`).click();
+  d = await readDoc();
+  r.ok('split row deleted; original and sibling untouched', !(bag in d.userRows) && ret in d.userRows && d.locks.flight.amount === '486');
+  // 9. a plain user row still counts against the reserve
+  r.ok('plain user rows still count in the reserve', qq('[data-tier-ref="u_t1"]').textContent === 'ייחוס: נספר ברזרבה');
   r.ok('no NaN anywhere', !/NaN/.test(w.document.body.innerText));
   f.remove();
   localStorage.removeItem(LOCAL_KEY);
