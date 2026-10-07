@@ -15,8 +15,8 @@ import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.18.0/
    2. הכתיבה המבוזרת (debounce) קוראת את מצב ה-DOM מחדש ברגע שהיא
       *יורה*, לא ברגע שהיא *נקבעה* — כך שאם לוחצים על רמת תקציב ואז
       עורכים שדה בתוך חלון ה-800ms, הכתיבה שבסוף כוללת גם את העריכה.
-   דגל userEdited חוסם את ה-getDoc מלדרוס עריכה שכבר בוצעה בזמן
-   שהבקשה עוד באוויר (חלון קצר בטעינת העמוד). */
+   עד שהטעינה הראשונית מסתיימת אי אפשר לערוך ושום דבר לא נשמר, וטעינה
+   שנכשלה משאירה את הדף לקריאה בלבד — ראו setLoadState. */
 
 const FIXED_FIELD_IDS = ['flight','airport','nightly','daily','barca','ucl','tour','metro','trip','tripCount','museums','shirt','scale','internet','misc'];
 /* FIELD_IDS/CURRENCY_IDS = השורות הקבועות + שורות המשתמש (userRows).
@@ -883,10 +883,36 @@ function saveLocal(state){
 
 let docRef = null;
 let saveTimer = null;
-let userEdited = false;
+
+/* מצב הטעינה הראשונית. setDoc כותב את המסמך כולו, אז שמירה מדף שלא
+   מציג את המסמך האמיתי דורסת אותו — נעילות, שורות משתמש, תיאורים:
+   - 'pending': ה-getDoc עוד באוויר והדף מציג את ברירות המחדל של ה-HTML.
+     המחשבון inert ו-scheduleSave לא שומר כלום (גם לא ל-localStorage).
+   - 'failed': הטעינה נכשלה. מוצג העותק המקומי (אם יש) לקריאה בלבד עד
+     רענון — עריכה שלו הייתה שומרת עותק ישן מעל המסמך.
+   - 'ready': המסמך נטען (או עוד לא קיים) — רק כאן שומרים.
+   החסימה ב-scheduleSave היא ההגנה האמיתית; inert רק מונע את הניסיון. */
+let loadState = 'pending';
+const LOAD_MSG = {
+  pending: 'טוען את התקציב…',
+  failed: 'הטעינה מהשרת נכשלה. מוצג העותק האחרון שנשמר במכשיר הזה, לקריאה בלבד — שום שינוי לא יישמר. רעננו את הדף כדי לנסות שוב.',
+  failedNoLocal: 'הטעינה מהשרת נכשלה ואין עותק שמור במכשיר הזה. לקריאה בלבד — שום שינוי לא יישמר. רעננו את הדף כדי לנסות שוב.'
+};
+function setLoadState(state, msgKey){
+  loadState = state;
+  const blocked = state !== 'ready';
+  $$('.wrap > *').forEach(el => { if (!el.matches('#loadBanner, .back')) el.inert = blocked; });
+  const banner = $('#loadBanner');
+  if (banner) {
+    banner.hidden = !blocked;
+    banner.textContent = LOAD_MSG[msgKey || state];
+    banner.classList.toggle('failed', state === 'failed');
+  }
+}
+setLoadState('pending');
 
 function scheduleSave(){
-  userEdited = true;
+  if (loadState !== 'ready') return; // ראו setLoadState
   saveLocal(getState());
   if (!docRef) return;
   clearTimeout(saveTimer);
@@ -1040,17 +1066,19 @@ onAuthStateChanged(auth, function(user){
   docRef = doc(db, 'users', user.uid, 'state', 'budget');
 
   getDoc(docRef).then(function(snap){
-    if (userEdited) return; // המשתמש כבר התחיל לערוך לפני שהתשובה חזרה
     if (snap.exists()) {
       applyState(snap.data());
     } else {
+      // אין עדיין מסמך בשרת — אין מה לדרוס, אז העותק המקומי הוא נקודת התחלה
       const local = loadLocal();
       if (local) applyState(local);
     }
+    setLoadState('ready');
   }).catch(function(err){
+    // כולל שגיאה בתוך applyState — גם אז לא שומרים מעל המסמך
     console.error('madrid-trip: budget getDoc failed', err);
-    if (userEdited) return;
     const local = loadLocal();
     if (local) applyState(local);
+    setLoadState('failed', local ? 'failed' : 'failedNoLocal');
   });
 });

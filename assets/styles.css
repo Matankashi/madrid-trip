@@ -319,6 +319,8 @@ select.cur:focus{outline:none;border-color:var(--rojo)}
 .rate input[type=number]{width:86px}
 .rate-date{font-size:10px;color:var(--slate);opacity:.7;white-space:nowrap}
 .rate-error{flex:1 1 100%;font-size:11px;color:var(--rojo)}
+.load-banner{margin-top:14px;padding:8px 12px;font-size:13px;color:var(--slate);border:1px solid var(--line);border-radius:var(--radius)}
+.load-banner.failed{color:var(--rojo);border-color:var(--rojo)}
 .refresh{
   flex:none;font-family:var(--font-body);font-size:11px;
   padding:4px 8px;border:1.5px solid var(--line);border-radius:var(--radius);

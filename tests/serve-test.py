@@ -9,6 +9,10 @@ Usage:  python3 tests/serve-test.py [port]      (default 8000)
   Firestore doc  users/{uid}/state/budget_test  instead of  state/budget, and
   uses a separate localStorage key. The real doc is never read or written by a
   page served from here. The files on disk are not modified.
+- Routes the page's initial load through __loadDoc (appended below), so a test
+  can open  budget.html?loadtest=slow  (load resolves after 3s) or
+  budget.html?loadtest=fail  (load rejects) to exercise the pre-load and
+  failed-load paths. Without ?loadtest it is a plain getDoc.
 
 Seed budget_test first (see tests/budget-checks.js), then open
 http://localhost:PORT/budget.html while signed in.
@@ -19,7 +23,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REWRITES = [
     ("'state', 'budget')", "'state', 'budget_test')"),
     ("'madrid.budget.v1'", "'madrid.budget.test'"),
+    ("getDoc(docRef).then(", "__loadDoc(docRef).then("),
 ]
+# appended to the served budget.js (function declarations are hoisted)
+LOAD_SHIM = """
+function __loadDoc(ref){
+  const mode = new URLSearchParams(location.search).get('loadtest');
+  if (mode === 'fail') return Promise.reject(new Error('loadtest: simulated getDoc failure'));
+  if (mode === 'slow') return new Promise(r => setTimeout(r, 3000)).then(() => getDoc(ref));
+  return getDoc(ref);
+}
+"""
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
@@ -38,6 +52,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     self.send_error(500, "serve-test.py: budget.js no longer contains %r" % old)
                     return
                 src = src.replace(old, new)
+            src += LOAD_SHIM
             body = src.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/javascript; charset=utf-8")

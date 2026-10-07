@@ -16,6 +16,7 @@
         await t.phaseC();                     // row details, links, edit mode, rename, CSS
         await t.seedLegacy(); location.reload();   // a v1.10-shaped doc (no userRows/rowMeta)
         await t.phaseLegacy();                // old documents still load fine
+        await t.phaseLoad();                  // load-time overwrite paths (reseeds itself, ~20s)
         await t.dropTestDoc();                // deletes budget_test
    Every function returns {passed, failed, failures:[...]}.
 
@@ -333,6 +334,84 @@ export async function phaseC() {
   d = await readDoc();
   r.ok('delete removed the row and its rowMeta entry together', !('u_t1' in d.userRows) && !('u_t1' in d.rowMeta));
   r.ok('no NaN anywhere', !/NaN/.test(document.body.innerText));
+  return r.result();
+}
+
+/* ---- load-time overwrite paths (regressions found 2026-10-07) ----
+   1. A tier/toggle click before the initial load resolved used to save the
+      HTML defaults over the whole doc (locks, userRows, rowMeta all gone).
+   2. A failed load used to fall back to the local copy, and the next edit
+      saved that stale copy over the doc.
+   Each check opens budget.html in an iframe with ?loadtest=slow|fail (see
+   serve-test.py), pokes at it with scripted clicks/inputs — which bypass
+   `inert` on purpose, so the save gate itself is what's tested, not only
+   the blocked UI — and asserts the doc and the local copy are unchanged. */
+const LOCAL_KEY = 'madrid.budget.test';
+const canonJson = o => JSON.stringify(o, (k, v) => (v && typeof v === 'object' && !Array.isArray(v)) ? Object.fromEntries(Object.keys(v).sort().map(x => [x, v[x]])) : v);
+const isInert = el => !!el && !!el.closest('[inert]');
+
+function openFrame(query) {
+  return new Promise(resolve => {
+    const f = document.createElement('iframe');
+    f.style.cssText = 'position:fixed;left:0;top:0;width:420px;height:700px;opacity:0;pointer-events:none';
+    f.onload = () => resolve(f);
+    f.src = '/budget.html?' + query;
+    document.body.appendChild(f);
+  });
+}
+
+// the exact "misc blank + ILS" signature, plus a tier switch and a toggle
+async function poke(w) {
+  const d = w.document, qq = s => d.querySelector(s);
+  qq('.tier[data-tier="custom"]').click(); await sleep(50);
+  qq('[data-tog="tour"]').click(); await sleep(50);
+  const misc = qq('[data-in="misc"]'); misc.value = ''; misc.dispatchEvent(new w.Event('input', { bubbles: true }));
+  const cur = qq('[data-cur="misc"]'); cur.value = 'ILS'; cur.dispatchEvent(new w.Event('change', { bubbles: true }));
+}
+
+export async function phaseLoad() {
+  await guard();
+  const src = await (await fetch('/assets/budget.js', { cache: 'no-store' })).text();
+  if (!src.includes('__loadDoc(docRef)')) throw new Error('serve-test.py load hook missing - restart the test server');
+  const r = reporter();
+
+  // 1. interaction before the load resolves
+  await setDoc(ref(), FIXTURE);
+  localStorage.removeItem(LOCAL_KEY);
+  const d0 = (await getDoc(ref())).data();
+  let f = await openFrame('loadtest=slow');
+  await sleep(800);
+  let w = f.contentWindow, qq = s => w.document.querySelector(s);
+  r.ok('slow: loading notice shown', !!qq('#loadBanner') && !qq('#loadBanner').hidden, qq('#loadBanner') && qq('#loadBanner').textContent);
+  r.ok('slow: calculator inert while loading', isInert(qq('.tiers')) && isInert(qq('[data-in="misc"]')) && isInert(qq('[data-tog="tour"]')));
+  await poke(w);
+  await sleep(4500); // load resolves at ~3s, plus the 800ms debounce and margin
+  r.ok('slow: pre-load clicks did not overwrite the doc', canonJson((await getDoc(ref())).data()) === canonJson(d0));
+  r.ok('slow: pre-load clicks did not write the local copy', localStorage.getItem(LOCAL_KEY) === null);
+  r.ok('slow: the saved doc is shown, not the defaults', qq('[data-in="misc"]').value === '50' && qq('[data-cur="misc"]').value === 'EUR' && qq('[data-item="flight"]').classList.contains('locked') && qq('.tier[data-tier="custom"]').getAttribute('aria-pressed') === 'true', { misc: qq('[data-in="misc"]').value, cur: qq('[data-cur="misc"]').value });
+  r.ok('slow: interactive once loaded', !isInert(qq('.tiers')) && !isInert(qq('[data-in="misc"]')) && !!qq('#loadBanner') && qq('#loadBanner').hidden);
+  const misc = qq('[data-in="misc"]'); misc.value = '51'; misc.dispatchEvent(new w.Event('input', { bubbles: true }));
+  r.ok('slow: edits after load still save', (await readDoc()).custom.values.misc === '51');
+  f.remove();
+
+  // 2. failed load with a stale local copy on the device
+  await setDoc(ref(), FIXTURE);
+  const d1 = (await getDoc(ref())).data();
+  const stale = JSON.parse(JSON.stringify(FIXTURE));
+  stale.locks = {}; stale.userRows = {}; stale.custom.values.misc = ''; stale.custom.currencies.misc = 'ILS';
+  const staleJson = JSON.stringify(stale);
+  localStorage.setItem(LOCAL_KEY, staleJson);
+  f = await openFrame('loadtest=fail');
+  await sleep(1200);
+  w = f.contentWindow; qq = s => w.document.querySelector(s);
+  r.ok('fail: read-only notice shown', !!qq('#loadBanner') && !qq('#loadBanner').hidden && /לקריאה בלבד/.test(qq('#loadBanner').textContent), qq('#loadBanner') && qq('#loadBanner').textContent);
+  r.ok('fail: calculator inert', isInert(qq('.tiers')) && isInert(qq('[data-in="misc"]')) && isInert(qq('[data-lockbtn="flight"]')));
+  await poke(w);
+  await sleep(2000);
+  r.ok('fail: edits did not save the stale copy over the doc', canonJson((await getDoc(ref())).data()) === canonJson(d1));
+  r.ok('fail: local copy untouched', localStorage.getItem(LOCAL_KEY) === staleJson);
+  f.remove();
+  localStorage.removeItem(LOCAL_KEY);
   return r.result();
 }
 
