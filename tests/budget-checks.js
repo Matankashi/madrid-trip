@@ -18,6 +18,7 @@
         await t.phaseLegacy();                // old documents still load fine
         await t.phaseLoad();                  // load-time overwrite paths (reseeds itself, ~20s)
         await t.phaseStay();                  // flat accommodation total + lock (reseeds itself)
+        await t.phaseMigrate();               // shirt/scale/internet -> user rows (reseeds itself)
         await t.dropTestDoc();                // deletes budget_test
    Every function returns {passed, failed, failures:[...]}.
 
@@ -25,7 +26,7 @@
    budget_test, so running this against a normally served page is refused. */
 
 import { db, auth } from '/assets/firebase-init.js';
-import { doc, getDoc, setDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
+import { doc, getDoc, setDoc, deleteDoc, updateDoc } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const q = s => document.querySelector(s);
@@ -57,14 +58,14 @@ const FIXTURE = {
   custom: {
     // every fixed row is listed explicitly (as in the real doc): a row missing here would
     // fall back to the HTML default and change the totals
-    values: { days: '12', nights: '11', tripCount: '2', flight: '486', airport: '', nightly: '', daily: '', barca: '1053.8', ucl: '', tour: '', metro: '', trip: '', museums: '', shirt: '', scale: '', internet: '', misc: '50', u_t1: '100', u_t2: '20', u_orphan: '999' },
-    currencies: { flight: 'ILS', airport: 'EUR', nightly: 'EUR', daily: 'EUR', barca: 'ILS', ucl: 'EUR', tour: 'EUR', metro: 'EUR', trip: 'EUR', museums: 'EUR', shirt: 'EUR', scale: 'EUR', internet: 'EUR', misc: 'EUR', u_t1: 'EUR', u_t2: 'USD', u_orphan: 'EUR' }
+    values: { days: '12', nights: '11', tripCount: '2', flight: '486', airport: '', nightly: '', daily: '', barca: '1053.8', ucl: '', tour: '', metro: '', trip: '', museums: '', misc: '50', u_t1: '100', u_t2: '20', u_orphan: '999' },
+    currencies: { flight: 'ILS', airport: 'EUR', nightly: 'EUR', daily: 'EUR', barca: 'ILS', ucl: 'EUR', tour: 'EUR', metro: 'EUR', trip: 'EUR', museums: 'EUR', misc: 'EUR', u_t1: 'EUR', u_t2: 'USD', u_orphan: 'EUR' }
   },
   rowMeta: {
     flight: { desc: 'אל על · הלוך', url: 'https://example.com/flight', zz_future: 'keep' },
     barca: { url: 'booking.com/x?y=1' },
     u_t1: { desc: 'תיאור פנימי', url: 'javascript:alert(1)' },
-    shirt: { desc: 'רק תיאור' },
+    museums: { desc: 'רק תיאור' },
     u_orphan: { desc: 'יתום' }
   },
   toggles: { trip: true, tour: false, ucl: true },
@@ -78,7 +79,7 @@ const FIXTURE = {
 };
 // custom total: flight lock 486/3.5 + barca 1053.8/3.5 + misc 50 + u_t1 100 + u_t2 lock 20/1.1
 const EXPECTED_CUSTOM_TOTAL = 486 / 3.5 + 1053.8 / 3.5 + 50 + 100 + 20 / 1.1;
-const EXPECTED_RESERVE_USED = 50 + 100 + 20 / 1.1; // misc + user rows (shirt/scale/internet are 0 here)
+const EXPECTED_RESERVE_USED = 50 + 100 + 20 / 1.1; // misc + user rows
 
 export async function seed() {
   await guard();
@@ -159,7 +160,7 @@ export async function phaseA() {
     q(`.tier[data-tier="${t}"]`).click(); await sleep(300);
     r.ok(`${t}: total is the exact original plan`, totalNum() === expectedPresetTotal(P, t), { shown: q('#totEur').textContent, expected: expectedPresetTotal(P, t) });
     r.ok(`${t}: user rows hidden`, !shown(q('[data-item="u_t1"]')) && !shown(q('[data-item="u_t2"]')));
-    r.ok(`${t}: zero-preset fixed rows hidden`, ['shirt', 'scale', 'internet'].every(id => !shown(q(`[data-item="${id}"]`))));
+    r.ok(`${t}: shirt/scale/internet are no longer fixed rows`, ['shirt', 'scale', 'internet'].every(id => !q(`[data-item="${id}"]`)));
     r.ok(`${t}: emptied group header hidden, populated group visible`, !shown(q('[data-pct="pre"]').closest('h2')) && shown(q('[data-pct="metro"]').closest('h2')));
     r.ok(`${t}: add buttons hidden`, [...document.querySelectorAll('[data-addwrap]')].every(w => w.style.display === 'none'));
     r.ok(`${t}: no visible NaN`, !/NaN/.test(document.body.innerText));
@@ -252,7 +253,7 @@ export async function phaseC() {
   r.ok('link without a scheme gets https://', vis(b) && b.getAttribute('href') === 'https://booking.com/x?y=1', b && b.getAttribute('href'));
   const bad = q('[data-link-view="u_t1"]');
   r.ok('javascript: URL is never rendered as a link', !vis(bad) && !bad.hasAttribute('href'));
-  r.ok('description-only row: text shown, no link', vis(q('[data-desc-view="shirt"]')) && !vis(q('[data-link-view="shirt"]')));
+  r.ok('description-only row: text shown, no link', vis(q('[data-desc-view="museums"]')) && !vis(q('[data-link-view="museums"]')));
   r.ok('row with no details shows nothing extra (zero height)', q('[data-meta="airport"]').getBoundingClientRect().height === 0 && !vis(q('[data-desc-view="airport"]')) && !vis(q('[data-link-view="airport"]')) && !vis(q('[data-meta-edit="airport"]')));
   r.ok('user rows get the same details UI', !!q('[data-meta="u_t1"]') && !!q('[data-desc-in="u_t2"]'));
 
@@ -459,16 +460,117 @@ export async function phaseStay() {
   return r.result();
 }
 
+/* ---- shirt/scale/internet -> user rows (v1.15) ----
+   A v1.14-shaped doc (the three as fixed rows, all locked, like the real
+   doc) must move over exactly: same values, currencies, locks, rowMeta,
+   same total and reserve; old keys gone after the first save; a second
+   load must not duplicate; old keys written back by a stale tab must not
+   override the migrated row; a migrated row that was deleted stays
+   deleted. */
+const MIGRATE_FX = (() => {
+  const fx = JSON.parse(JSON.stringify(FIXTURE));
+  Object.assign(fx.custom.values, { shirt: '159', scale: '25.3', internet: '32.25', u_t3: '0' });
+  Object.assign(fx.custom.currencies, { shirt: 'ILS', scale: 'ILS', internet: 'USD', u_t3: 'EUR' });
+  Object.assign(fx.locks, {
+    shirt: { amount: '159', currency: 'ILS', rate: 3.5, chargedOn: '2026-09-19' },
+    scale: { amount: '25.3', currency: 'ILS', rate: 3.5, chargedOn: '2026-09-18' },
+    internet: { amount: '32.25', currency: 'USD', rate: 1.1, chargedOn: '2026-09-17' }
+  });
+  Object.assign(fx.rowMeta, { shirt: { desc: 'חולצה', zz_future: 'keep' }, internet: { url: 'https://example.com/esim' } });
+  fx.userRows.u_t3 = { label: 'בדיקה 3', group: 'pre', createdAt: 10 };
+  return fx;
+})();
+const MIGRATED_EXTRA = 159 / 3.5 + 25.3 / 3.5 + 32.25 / 1.1;
+
+async function frameReady(f) {
+  const qq = s => f.contentWindow.document.querySelector(s);
+  for (let i = 0; i < 40 && !(qq('#loadBanner') && qq('#loadBanner').hidden); i++) await sleep(200);
+  return qq;
+}
+
+export async function phaseMigrate() {
+  const src = await guard();
+  const P = presetsFrom(src);
+  const r = reporter();
+  r.ok('PRESETS no longer list shirt/scale/internet', ['lean', 'mid', 'rich'].every(t => !['shirt', 'scale', 'internet'].some(k => k in P[t])));
+  await setDoc(ref(), MIGRATE_FX);
+  localStorage.removeItem(LOCAL_KEY);
+  const d0 = (await getDoc(ref())).data();
+  let f = await openFrame('');
+  let qq = await frameReady(f);
+  const total = () => parseInt(qq('#totEur').textContent.replace(/[^0-9-]/g, ''), 10);
+  const rowsOf = key => qq(`[data-pct="${key}"]`).closest('h2').nextElementSibling;
+  const expected = Math.round(EXPECTED_CUSTOM_TOTAL + MIGRATED_EXTRA);
+  const save = async () => { qq('[data-tog="tour"]').click(); await sleep(150); qq('[data-tog="tour"]').click(); return readDoc(); };
+
+  // 1. first load: everything moved, nothing written yet
+  r.ok('no fixed shirt/scale/internet rows', ['shirt', 'scale', 'internet'].every(id => !qq(`[data-item="${id}"]`)));
+  r.ok('migrated rows have their labels', qq('[data-item="u_shirt"] .name').textContent === 'חולצת משחק' && qq('[data-item="u_scale"] .name').textContent === 'משקל ידני למזוודה' && qq('[data-item="u_internet"] .name').textContent === 'אינטרנט');
+  const pre = [...rowsOf('pre').querySelectorAll('[data-item]')].map(x => x.dataset.item);
+  const met = [...rowsOf('metro').querySelectorAll('[data-item]')].map(x => x.dataset.item);
+  r.ok('groups and order kept (migrated rows before newer user rows)', JSON.stringify(pre) === JSON.stringify(['u_shirt', 'u_scale', 'u_t3']) && JSON.stringify(met) === JSON.stringify(['metro', 'u_internet']), { pre, met });
+  r.ok('all three still locked with the same amounts', ['u_shirt', 'u_scale', 'u_internet'].every(id => qq(`[data-item="${id}"]`).classList.contains('locked')) && qq('[data-amt="u_shirt"]').textContent === '₪159' && qq('[data-amt="u_scale"]').textContent === '₪25' && qq('[data-amt="u_internet"]').textContent === '$32', ['u_shirt', 'u_scale', 'u_internet'].map(id => qq(`[data-amt="${id}"]`).textContent));
+  r.ok('charge dates kept', qq('[data-lockdate="u_shirt"]').value === '2026-09-19' && qq('[data-lockdate="u_scale"]').value === '2026-09-18' && qq('[data-lockdate="u_internet"]').value === '2026-09-17');
+  r.ok('total unchanged by the move', Math.abs(total() - expected) <= 1, { shown: qq('#totEur').textContent, expected });
+  const used = qq('#reserveLine').textContent.match(/€([0-9,]+) מתוך/);
+  r.ok('still counted against the reserve', used && Math.abs(parseInt(used[1].replace(/,/g, ''), 10) - Math.round(EXPECTED_RESERVE_USED + MIGRATED_EXTRA)) <= 1, qq('#reserveLine').textContent);
+  r.ok('details kept; hint becomes the description when there was none', qq('[data-link-view="u_internet"]').getAttribute('href') === 'https://example.com/esim' && qq('[data-desc-view="u_shirt"]').textContent === 'חולצה' && qq('[data-desc-view="u_scale"]').textContent === 'לפני הטיסה');
+  r.ok('loading alone writes nothing', canonJson((await getDoc(ref())).data()) === canonJson(d0));
+
+  // 2. first save persists the new shape and drops the old keys
+  const d1 = await save();
+  const MAP = { shirt: 'u_shirt', scale: 'u_scale', internet: 'u_internet' };
+  r.ok('user row definitions saved', canonJson(d1.userRows.u_shirt) === canonJson({ label: 'חולצת משחק', group: 'pre', createdAt: 1 }) && d1.userRows.u_scale.group === 'pre' && d1.userRows.u_internet.group === 'metro', d1.userRows);
+  r.ok('values, currencies, locks moved exactly', Object.entries(MAP).every(([o, n]) => d1.custom.values[n] === d0.custom.values[o] && d1.custom.currencies[n] === d0.custom.currencies[o] && canonJson(d1.locks[n]) === canonJson(d0.locks[o])));
+  r.ok('rowMeta moved exactly (unknown fields too)', canonJson(d1.rowMeta.u_shirt) === canonJson(d0.rowMeta.shirt) && canonJson(d1.rowMeta.u_internet) === canonJson(d0.rowMeta.internet) && d1.rowMeta.u_scale.desc === 'לפני הטיסה');
+  r.ok('old keys gone everywhere', Object.keys(MAP).every(o => !(o in d1.custom.values) && !(o in d1.custom.currencies) && !(o in d1.locks) && !(o in d1.rowMeta)));
+  r.ok('everything else untouched', canonJson(d1.locks.flight) === canonJson(d0.locks.flight) && canonJson(d1.locks.u_t2) === canonJson(d0.locks.u_t2) && canonJson(d1.locks.u_orphan) === canonJson(d0.locks.u_orphan) && d1.custom.values.misc === '50' && d1.zz_future && d1.zz_future.keep === true);
+  f.remove();
+
+  // 3. second load: no duplicates
+  f = await openFrame(''); qq = await frameReady(f);
+  const count = id => qq('body').querySelectorAll(`[data-item="${id}"]`).length;
+  r.ok('second load: exactly one of each, nothing new', ['u_shirt', 'u_scale', 'u_internet'].every(id => count(id) === 1) && qq('body').querySelectorAll('[data-user-row]').length === Object.keys(d1.userRows).length);
+  r.ok('second load: total unchanged', Math.abs(total() - expected) <= 1, qq('#totEur').textContent);
+  f.remove();
+
+  // 4. a stale (v1.14) tab writes the old keys back from its HTML defaults
+  await updateDoc(ref(), 'custom.values.shirt', '0', 'custom.currencies.shirt', 'EUR');
+  f = await openFrame(''); qq = await frameReady(f);
+  r.ok('stale old keys: the migrated row wins', count('shirt') === 0 && count('u_shirt') === 1 && qq('[data-amt="u_shirt"]').textContent === '₪159' && Math.abs(total() - expected) <= 1);
+  const d2 = await save();
+  r.ok('stale old keys dropped on save, migrated row intact', !('shirt' in d2.custom.values) && !('shirt' in d2.custom.currencies) && d2.custom.values.u_shirt === '159' && canonJson(d2.locks.u_shirt) === canonJson(d0.locks.shirt));
+
+  // 5. a deleted migrated row stays deleted
+  qq('[data-lockbtn="u_scale"]').click(); await sleep(100);
+  qq('[data-delbtn="u_scale"]').click(); await sleep(100);
+  qq('[data-delyes="u_scale"]').click();
+  const d3 = await readDoc();
+  r.ok('migrated row can be deleted', !('u_scale' in d3.userRows) && !('u_scale' in d3.custom.values) && !('u_scale' in d3.locks));
+  f.remove();
+  f = await openFrame(''); qq = await frameReady(f);
+  r.ok('deleted migrated row does not come back', count('u_scale') === 0 && count('scale') === 0);
+
+  // 6. preset tiers still show the exact original plan
+  qq('.tier[data-tier="mid"]').click(); await sleep(300);
+  r.ok('mid: exact original plan, migrated rows hidden', total() === expectedPresetTotal(P, 'mid') && ['u_shirt', 'u_internet'].every(id => qq(`[data-item="${id}"]`).style.display === 'none'), qq('#totEur').textContent);
+  f.remove();
+  localStorage.removeItem(LOCAL_KEY);
+  return r.result();
+}
+
 export async function phaseLegacy() {
   await guard();
   const r = reporter();
-  r.ok('legacy doc rendered (fixed rows present, none of the new data)', !!q('[data-item="flight"]') && !document.querySelector('[data-user-row]'));
-  r.ok('legacy doc: no details shown anywhere', ![...document.querySelectorAll('[data-desc-view],[data-link-view]')].some(vis));
+  const MIGRATED = ['u_internet', 'u_scale', 'u_shirt'];
+  const userRowIdsShown = () => [...document.querySelectorAll('[data-user-row]')].map(x => x.dataset.item).sort();
+  r.ok('legacy doc rendered (fixed rows present; only the three migrated user rows)', !!q('[data-item="flight"]') && JSON.stringify(userRowIdsShown()) === JSON.stringify(MIGRATED), userRowIdsShown());
+  r.ok('legacy doc: no details shown except the migrated hints', [...document.querySelectorAll('[data-desc-view],[data-link-view]')].filter(vis).every(el => MIGRATED.includes(el.dataset.descView)));
   r.ok('legacy doc: total is right (flight 486/3.5 + barca 1053.8/3.5)', Math.abs(totalNum() - Math.round(486 / 3.5 + 1053.8 / 3.5)) <= 1, q('#totEur').textContent);
   r.ok('legacy doc: no NaN', !/NaN/.test(document.body.innerText));
   q('[data-tog="tour"]').click(); await sleep(150); q('[data-tog="tour"]').click();
   const d = await readDoc();
-  r.ok('legacy doc after a save: empty userRows/rowMeta, nothing else invented', Object.keys(d.userRows || {}).length === 0 && Object.keys(d.rowMeta || {}).length === 0);
+  r.ok('legacy doc after a save: only the three migrated rows and their hints, nothing else invented', JSON.stringify(Object.keys(d.userRows || {}).sort()) === JSON.stringify(MIGRATED) && JSON.stringify(Object.keys(d.rowMeta || {}).sort()) === JSON.stringify(MIGRATED) && d.rowMeta.u_scale.desc === 'לפני הטיסה', { userRows: Object.keys(d.userRows || {}), rowMeta: d.rowMeta });
   // a first detail on a legacy doc
   q('#metaToggle').click(); await sleep(100);
   setVal(q('[data-link-in="barca"]'), 'https://example.com/ticket');

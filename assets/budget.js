@@ -18,7 +18,7 @@ import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.18.0/
    עד שהטעינה הראשונית מסתיימת אי אפשר לערוך ושום דבר לא נשמר, וטעינה
    שנכשלה משאירה את הדף לקריאה בלבד — ראו setLoadState. */
 
-const FIXED_FIELD_IDS = ['flight','airport','nightly','daily','barca','ucl','tour','metro','trip','tripCount','museums','shirt','scale','internet','misc'];
+const FIXED_FIELD_IDS = ['flight','airport','nightly','daily','barca','ucl','tour','metro','trip','tripCount','museums','misc'];
 /* FIELD_IDS/CURRENCY_IDS = השורות הקבועות + שורות המשתמש (userRows).
    הן משתנות בזמן ריצה (refreshIds), אז אף קוד לא אמור לשמור עותק שלהן. */
 let FIELD_IDS = FIXED_FIELD_IDS.slice();
@@ -47,14 +47,15 @@ const LOCK_ICON_OPEN = '<svg viewBox="0 0 24 24" width="13" height="13" fill="no
    רק בשכבת "מותאם אישית" (customValues/customCurrencies), וזו היחידה
    שנשמרת. אם מוסיפים דרך חדשה לשנות תקציב בעתיד — היא לא נוגעת כאן. */
 const PRESETS = {
-  lean:{flight:230,airport:12,nightly:58,daily:32,barca:140,ucl:45,tour:25,metro:35,trip:30,tripCount:2,museums:55,shirt:0,scale:0,internet:0,misc:120},
-  mid: {flight:330,airport:12,nightly:95,daily:55,barca:250,ucl:70,tour:25,metro:55,trip:60,tripCount:2,museums:130,shirt:0,scale:0,internet:0,misc:200},
-  rich:{flight:480,airport:70,nightly:165,daily:95,barca:420,ucl:120,tour:60,metro:130,trip:110,tripCount:2,museums:220,shirt:0,scale:0,internet:0,misc:350}
+  lean:{flight:230,airport:12,nightly:58,daily:32,barca:140,ucl:45,tour:25,metro:35,trip:30,tripCount:2,museums:55,misc:120},
+  mid: {flight:330,airport:12,nightly:95,daily:55,barca:250,ucl:70,tour:25,metro:55,trip:60,tripCount:2,museums:130,misc:200},
+  rich:{flight:480,airport:70,nightly:165,daily:95,barca:420,ucl:120,tour:60,metro:130,trip:110,tripCount:2,museums:220,misc:350}
 };
 const TIER_LABELS = {lean:'חסכוני', mid:'מאוזן', rich:'נוח', custom:'מותאם אישית'};
 /* שורה "בלי תכנון" = אין לה מחיר בשכבות המחיר: שורת משתמש (userRows —
-   אין לה PRESETS בכלל), או שורה קבועה שכל שלושת ה-PRESETS שלה 0
-   (shirt/scale/internet). התכנון המקורי לא תקצב אותה בנפרד — היא נספרת
+   אין לה PRESETS בכלל), או שורה קבועה שכל שלושת ה-PRESETS שלה 0 (אין
+   כרגע כזו — shirt/scale/internet היו כאלה ועברו לשורות משתמש ב-v1.15,
+   ראו LEGACY_FIXED_ROWS). התכנון המקורי לא תקצב אותה בנפרד — היא נספרת
    מול הרזרבה (misc), ולכן: (1) ההשוואה הכוללת נשארת הוגנת בלי שינוי —
    צד השכבות כבר כולל את הרזרבה המלאה; (2) שורת "כמה מהרזרבה נוצל"
    מסכמת misc + כל שורה כזו; (3) בשכבת מחיר היא מוסתרת לגמרי ולא נספרת,
@@ -98,9 +99,9 @@ const GROUPS = [
   {key:'stay',   label:'לינה',    color:'#C4262E', items:['nightly']},
   {key:'food',   label:'אוכל',    color:'#C9962C', items:['daily']},
   {key:'ball',   label:'כדורגל',  color:'#2F6F4E', items:['barca','ucl','tour']},
-  {key:'metro',  label:'תחבורה ותקשורת',color:'#5B6472', items:['metro','internet']},
+  {key:'metro',  label:'תחבורה ותקשורת',color:'#5B6472', items:['metro']},
   {key:'trips',  label:'טיולים ואטרקציות',color:'#8C3B4A',items:['trip','museums']},
-  {key:'pre',    label:'ציוד לפני הטיול',color:'#7A5C99',items:['shirt','scale']},
+  {key:'pre',    label:'ציוד לפני הטיול',color:'#7A5C99',items:[]},
   {key:'misc',   label:'רזרבה',   color:'#A9A497', items:['misc']}
 ];
 const groupItems = g => g.items.concat(userRowIds().filter(id => userRows[id].group === g.key));
@@ -790,6 +791,41 @@ function getState(){
   });
 }
 
+/* v1.15: shirt/scale/internet היו שורות קבועות (בלי PRESETS — 0 בכל
+   השכבות) והפכו לשורות משתמש, כדי שאפשר יהיה לשנות להן שם ולמחוק אותן.
+   ה-id החדש קבוע (לא אקראי), כך שטעינה חוזרת לא יכולה לשכפל שורה.
+   המעבר קורה בזיכרון בכל טעינה של מסמך ישן, ונשמר רק בשמירה הבאה:
+   - יש במסמך מפתח ישן (ערך/מטבע/נעילה/rowMeta) ועוד אין שורת משתמש
+     חדשה -> הכול עובר כמות שהוא ל-id החדש, והמפתחות הישנים נמחקים. אם
+     אין לשורה תיאור, ה-hint שהיה מוצג מתחת לשם נכנס כתיאור.
+   - אין שום מפתח ישן -> לא נוצר כלום. כך שורה שעברה ונמחקה נשארת מחוקה.
+   - כבר יש שורת משתמש חדשה (טאב ישן כתב שוב מפתחות ישנים מברירות המחדל
+     של ה-HTML) -> השורה החדשה גוברת: ערך ומטבע ישנים נזרקים. נעילה
+     ו-rowMeta ישנים לא נמחקים לעולם — נשמרים כ-foreign, לא נספרים. */
+const LEGACY_FIXED_ROWS = {
+  shirt:    {id: 'u_shirt',    label: 'חולצת משחק',        group: 'pre',   hint: 'נרכשה לפני הטיול', createdAt: 1},
+  scale:    {id: 'u_scale',    label: 'משקל ידני למזוודה', group: 'pre',   hint: 'לפני הטיסה',       createdAt: 2},
+  internet: {id: 'u_internet', label: 'אינטרנט',           group: 'metro', hint: 'תקשורת בטיול',     createdAt: 3}
+};
+function migrateLegacyRows(values, currencies, savedLocks, savedUserRows, savedMeta){
+  const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+  Object.keys(LEGACY_FIXED_ROWS).forEach(old => {
+    const m = LEGACY_FIXED_ROWS[old];
+    if (has(savedUserRows, m.id)) {
+      delete values[old];
+      delete currencies[old];
+      return;
+    }
+    if (![values, currencies, savedLocks, savedMeta].some(o => has(o, old))) return;
+    savedUserRows[m.id] = {label: m.label, group: m.group, createdAt: m.createdAt};
+    values[m.id] = has(values, old) ? values[old] : '0'; // "0" = ברירת המחדל שהייתה ב-HTML
+    if (has(currencies, old)) currencies[m.id] = currencies[old];
+    if (has(savedLocks, old)) savedLocks[m.id] = savedLocks[old];
+    savedMeta[m.id] = has(savedMeta, old) ? savedMeta[old] : {desc: m.hint};
+    [values, currencies, savedLocks, savedMeta].forEach(o => { delete o[old]; });
+  });
+}
+
 function applyState(data){
   const savedToggles = (data && data.toggles) || {};
   const savedRates = (data && data.rates) || {};
@@ -815,13 +851,17 @@ function applyState(data){
   const refToggleEl = $('#refToggle');
   if (refToggleEl) refToggleEl.checked = showTierRefs;
 
+  const savedLocks = cloneJson((data && data.locks) || {});
+  const savedUserRows = cloneJson((data && data.userRows) || {});
+  const savedMeta = cloneJson((data && data.rowMeta) || {});
+  migrateLegacyRows(customValues, customCurrencies, savedLocks, savedUserRows, savedMeta);
+
   // שורות המשתמש נטענות ראשונות: הן קובעות את CURRENCY_IDS, ואת זה שנעילה
   // של id מסוים היא "מוכרת" ולא foreignLocks.
-  loadUserRows(data && data.userRows);
-  loadRowMeta(data && data.rowMeta);
+  loadUserRows(savedUserRows);
+  loadRowMeta(savedMeta);
   syncMetaInputs();
 
-  const savedLocks = (data && data.locks) || {};
   foreignTop = {};
   foreignCustom = {};
   foreignLocks = {};
