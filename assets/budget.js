@@ -75,9 +75,10 @@ const PLANLESS_FIXED_ROWS = FIXED_FIELD_IDS.filter(id => id !== 'tripCount' && [
    locks/currencies. url נשמר כפי שהוקלד, וההפיכה לקישור לחיץ (normalizeUrl)
    נעשית רק בזמן הצגה — כך שעריכה באמצע הקלדה לא מוחקת כלום, וערך לא תקין
    פשוט לא מוצג כקישור. ערכים של id שאין לו שורה כרגע נשמרים כמות שהם.
-   metaEditing הוא מצב תצוגה בלבד (לא נשמר). */
+   metaOpen = השורות שהעורך שלהן פתוח (כפתור "פרטים" בשורה עצמה) — מצב
+   תצוגה בלבד, לא נשמר. */
 let rowMeta = {};
-let metaEditing = false;
+const metaOpen = new Set();
 const DESC_MAX = 200;
 const URL_MAX = 2000;
 let userRows = {};
@@ -372,10 +373,9 @@ function render(){
 
   // תיאור וקישור: תצוגה בכל שכבה (אלה פרטי ההוצאה, לא חלק מהתכנון), עריכה
   // רק ב-custom ורק כשמתג העריכה דלוק — אחרת שורה בלי פרטים לא מציגה כלום.
-  const metaEditingNow = tier === 'custom' && metaEditing;
-  const metaToggleWrap = $('#metaToggleWrap');
-  if (metaToggleWrap) metaToggleWrap.hidden = tier !== 'custom';
+  $$('[data-actwrap]').forEach(w => { w.style.display = readOnly ? 'none' : ''; });
   CURRENCY_IDS.forEach(id => {
+    const metaEditingNow = tier === 'custom' && metaOpen.has(id);
     const m = rowMeta[id] || {};
     const desc = (m.desc || '').trim();
     const href = normalizeUrl(m.url);
@@ -395,6 +395,11 @@ function render(){
     }
     const ed = document.querySelector(`[data-meta-edit="${id}"]`);
     if (ed) ed.hidden = !metaEditingNow;
+    const mb = document.querySelector(`[data-metabtn="${id}"]`);
+    if (mb) {
+      mb.textContent = metaEditingNow ? 'סיום עריכת פרטים' : (desc || (m.url || '').trim()) ? 'ערוך תיאור וקישור' : '＋ תיאור וקישור';
+      mb.setAttribute('aria-expanded', String(metaEditingNow));
+    }
     const err = document.querySelector(`[data-link-err="${id}"]`);
     const linkIn = document.querySelector(`[data-link-in="${id}"]`);
     const bad = metaEditingNow && !!(m.url || '').trim() && !href;
@@ -552,6 +557,22 @@ function ensureMetaEl(row, id){
       `<div class="linkerr" data-link-err="${id}" hidden>הקישור לא תקין — הוא לא יוצג כקישור</div>` +
     `</div>`;
   txt.insertBefore(box, txt.querySelector('.tier-ref'));
+  // כפתור "פרטים" בשורה עצמה (רק ב-custom): בשורת משתמש בשורת הפעולות
+  // הקיימת (שנה שם/מחק), בשורה קבועה בשורת פעולות חדשה באותו מבנה.
+  let actions = txt.querySelector('[data-delwrap]');
+  if (!actions) {
+    actions = document.createElement('div');
+    actions.className = 'delrow-wrap';
+    actions.dataset.actwrap = id;
+    txt.appendChild(actions);
+  }
+  const btn = document.createElement('button');
+  btn.className = 'renbtn';
+  btn.type = 'button';
+  btn.dataset.metabtn = id;
+  btn.setAttribute('aria-expanded', 'false');
+  btn.textContent = '＋ תיאור וקישור';
+  actions.insertBefore(btn, actions.firstChild);
 }
 
 function loadRowMeta(saved){
@@ -1105,10 +1126,13 @@ document.addEventListener('click', e => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && e.target.matches && e.target.matches('[data-ren-in]')) setRenaming(e.target.dataset.renIn, false);
 });
-const metaToggleInput = $('#metaToggle');
-if (metaToggleInput) metaToggleInput.addEventListener('change', e => {
-  metaEditing = e.target.checked;
+document.addEventListener('click', e => {
+  const mb = e.target.closest('[data-metabtn]');
+  if (!mb || tier !== 'custom') return;
+  const id = mb.dataset.metabtn;
+  if (metaOpen.has(id)) metaOpen.delete(id); else metaOpen.add(id);
   render();
+  if (metaOpen.has(id)) { const d = document.querySelector(`[data-desc-in="${id}"]`); if (d) d.focus(); }
 });
 document.addEventListener('submit', e => {
   const renForm = e.target.closest('[data-renform]');

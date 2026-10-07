@@ -261,9 +261,18 @@ export async function phaseC() {
   r.ok('user rows get the same details UI', !!q('[data-meta="u_t1"]') && !!q('[data-desc-in="u_t2"]'));
 
   // ---- 2. edit mode (custom only)
-  r.ok('edit toggle visible in custom, editors hidden by default', vis(q('#metaToggleWrap')) && !vis(q('[data-meta-edit="airport"]')));
-  q('#metaToggle').click(); await sleep(150);
-  r.ok('toggle on: every row (fixed and user) shows the two inputs', ['airport', 'flight', 'misc', 'u_t1', 'u_t2'].every(id => vis(q(`[data-desc-in="${id}"]`)) && vis(q(`[data-link-in="${id}"]`))));
+  // no global checkbox any more: each row has its own button, inside the row
+  r.ok('global edit checkbox is gone', !q('#metaToggle') && !q('#metaToggleWrap'));
+  const ROWS = ['airport', 'flight', 'misc', 'u_t1', 'u_t2'];
+  r.ok('every row (fixed and user) has its own details button, inside the row, visible in custom', ROWS.every(id => { const b = q(`[data-metabtn="${id}"]`); return vis(b) && b.closest('[data-item]') === q(`[data-item="${id}"]`); }));
+  r.ok('editors hidden by default', ROWS.every(id => !vis(q(`[data-meta-edit="${id}"]`))));
+  r.ok('button says add when the row has no details, edit when it has', q('[data-metabtn="airport"]').textContent === '＋ תיאור וקישור' && q('[data-metabtn="flight"]').textContent === 'ערוך תיאור וקישור');
+  q('[data-metabtn="airport"]').click(); await sleep(100);
+  r.ok('one button opens only its own row, focused on the description', vis(q('[data-meta-edit="airport"]')) && !vis(q('[data-meta-edit="flight"]')) && document.activeElement === q('[data-desc-in="airport"]') && q('[data-metabtn="airport"]').getAttribute('aria-expanded') === 'true');
+  q('[data-metabtn="airport"]').click(); await sleep(100);
+  r.ok('clicking again closes it', !vis(q('[data-meta-edit="airport"]')) && q('[data-metabtn="airport"]').textContent === '＋ תיאור וקישור');
+  ROWS.forEach(id => q(`[data-metabtn="${id}"]`).click()); await sleep(150);
+  r.ok('all opened: every row (fixed and user) shows the two inputs', ['airport', 'flight', 'misc', 'u_t1', 'u_t2'].every(id => vis(q(`[data-desc-in="${id}"]`)) && vis(q(`[data-link-in="${id}"]`))));
   r.ok('inputs hold the saved values', q('[data-desc-in="flight"]').value === 'אל על · הלוך' && q('[data-link-in="barca"]').value === 'booking.com/x?y=1');
   setVal(q('[data-desc-in="airport"]'), '  מטרו לעיר  ');
   setVal(q('[data-link-in="airport"]'), 'https://maps.google.com/?q=Atocha');
@@ -299,7 +308,7 @@ export async function phaseC() {
 
   // ---- 3. preset tiers: read-only, links still usable
   q('.tier[data-tier="mid"]').click(); await sleep(250);
-  r.ok('preset tier: edit toggle and editors hidden', !vis(q('#metaToggleWrap')) && !vis(q('[data-meta-edit="flight"]')));
+  r.ok('preset tier: details buttons and editors hidden', !vis(q('[data-metabtn="flight"]')) && !vis(q('[data-metabtn="u_t2"]')) && !vis(q('[data-meta-edit="flight"]')));
   r.ok('preset tier: existing link still shown', vis(q('[data-link-view="flight"]')));
   r.ok('preset tier: lock buttons hidden (CSS hidden-attribute fix)', [...document.querySelectorAll('[data-lockbtn]')].every(x => cs(x) === 'none'));
   r.ok('preset tier: "show reference values" checkbox hidden', cs(q('#refToggleWrap')) === 'none');
@@ -575,7 +584,7 @@ export async function phaseLegacy() {
   const d = await readDoc();
   r.ok('legacy doc after a save: only the three migrated rows and their hints, nothing else invented', JSON.stringify(Object.keys(d.userRows || {}).sort()) === JSON.stringify(MIGRATED) && JSON.stringify(Object.keys(d.rowMeta || {}).sort()) === JSON.stringify(MIGRATED) && d.rowMeta.u_scale.desc === 'לפני הטיסה', { userRows: Object.keys(d.userRows || {}), rowMeta: d.rowMeta });
   // a first detail on a legacy doc
-  q('#metaToggle').click(); await sleep(100);
+  q('[data-metabtn="barca"]').click(); await sleep(100);
   setVal(q('[data-link-in="barca"]'), 'https://example.com/ticket');
   const d2 = await readDoc();
   r.ok('first link on a legacy doc persists', d2.rowMeta.barca && d2.rowMeta.barca.url === 'https://example.com/ticket');
@@ -608,7 +617,7 @@ export async function phaseGuard() {
   r.ok('single tab: next saves go through too', d.custom.values.misc === '62' && clean(A));
   A.qq('[data-lockbtn="misc"]').click(); d = await docWhen(x => x.locks.misc);
   r.ok('single tab: lock saves', d.locks.misc && d.locks.misc.amount === '62' && clean(A), d.locks.misc);
-  A.qq('#metaToggle').click(); await sleep(50);
+  A.qq('[data-metabtn="misc"]').click(); await sleep(50);
   const li = A.qq('[data-link-in="misc"]'); li.value = 'https://example.com/r'; li.dispatchEvent(new A.w.Event('input', { bubbles: true }));
   d = await docWhen(x => x.rowMeta.misc);
   r.ok('single tab: link on a locked row saves', d.rowMeta.misc && d.rowMeta.misc.url === 'https://example.com/r' && clean(A));
