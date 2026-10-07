@@ -17,6 +17,7 @@
         await t.seedLegacy(); location.reload();   // a v1.10-shaped doc (no userRows/rowMeta)
         await t.phaseLegacy();                // old documents still load fine
         await t.phaseLoad();                  // load-time overwrite paths (reseeds itself, ~20s)
+        await t.phaseStay();                  // flat accommodation total + lock (reseeds itself)
         await t.dropTestDoc();                // deletes budget_test
    Every function returns {passed, failed, failures:[...]}.
 
@@ -410,6 +411,49 @@ export async function phaseLoad() {
   await sleep(2000);
   r.ok('fail: edits did not save the stale copy over the doc', canonJson((await getDoc(ref())).data()) === canonJson(d1));
   r.ok('fail: local copy untouched', localStorage.getItem(LOCAL_KEY) === staleJson);
+  f.remove();
+  localStorage.removeItem(LOCAL_KEY);
+  return r.result();
+}
+
+/* ---- accommodation is a flat total in custom (2026-10-07) ----
+   The stay was paid as one charge for the whole stay, so in custom the
+   `nightly` row is a total: it must count once, the lock button must store
+   it as is, and the nights field must not move it. The presets stay per
+   night, so a preset tier still multiplies. */
+export async function phaseStay() {
+  const src = await guard();
+  const P = presetsFrom(src);
+  const r = reporter();
+  const fx = JSON.parse(JSON.stringify(FIXTURE));
+  fx.custom.values.nightly = '3122'; fx.custom.currencies.nightly = 'ILS';
+  await setDoc(ref(), fx);
+  localStorage.removeItem(LOCAL_KEY);
+  const f = await openFrame('');
+  const w = f.contentWindow, qq = s => w.document.querySelector(s);
+  for (let i = 0; i < 30 && !qq('#loadBanner').hidden; i++) await sleep(200);
+  const total = () => parseInt(qq('#totEur').textContent.replace(/[^0-9-]/g, ''), 10);
+  const setNights = async n => { const el = qq('#nights'); el.value = String(n); el.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(150); };
+  const expected = Math.round(EXPECTED_CUSTOM_TOTAL + 3122 / 3.5);
+
+  r.ok('stay row renamed', qq('[data-item="nightly"] .name').textContent === 'לינה 1–8.11' && /7 לילות · סכום כולל ששולם/.test(qq('[data-item="nightly"] .hint').textContent));
+  r.ok('unlocked: ₪3,122 counts once', Math.abs(total() - expected) <= 1 && qq('[data-amt="nightly"]').textContent === '₪3,122', { shown: qq('#totEur').textContent, amt: qq('[data-amt="nightly"]').textContent, expected });
+  await setNights(20);
+  r.ok('unlocked: nights does not move the total', Math.abs(total() - expected) <= 1, qq('#totEur').textContent);
+  await setNights(11);
+
+  qq('[data-lockbtn="nightly"]').click();
+  const d = await readDoc();
+  r.ok('lock button stores the flat total', d.locks.nightly && d.locks.nightly.amount === '3122' && d.locks.nightly.currency === 'ILS' && d.locks.nightly.rate === 3.5, d.locks.nightly);
+  r.ok('locked: counts once', Math.abs(total() - expected) <= 1, qq('#totEur').textContent);
+  await setNights(5);
+  r.ok('locked: nights does not move the total', Math.abs(total() - expected) <= 1, qq('#totEur').textContent);
+  await setNights(11);
+
+  qq('.tier[data-tier="mid"]').click(); await sleep(300);
+  r.ok('preset tier still multiplies per night', total() === expectedPresetTotal(P, 'mid') && qq('[data-amt="nightly"]').textContent === '₪' + Math.round(P.mid.nightly * 3.5 * 11).toLocaleString('en-US'), { shown: qq('#totEur').textContent, amt: qq('[data-amt="nightly"]').textContent });
+  qq('.tier[data-tier="custom"]').click(); await sleep(300);
+  r.ok('back in custom: still the flat total', Math.abs(total() - expected) <= 1, qq('#totEur').textContent);
   f.remove();
   localStorage.removeItem(LOCAL_KEY);
   return r.result();

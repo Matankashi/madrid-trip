@@ -191,7 +191,9 @@ function lineValueNative(id){
   const inp = document.querySelector(`[data-in="${id}"]`);
   if(!inp) return 0;
   const v = num(inp);
-  if(id === 'nightly') return v * num($('#nights'));
+  // לינה ב-custom היא סכום כולל (חיוב אחד על כל השהות) ולא מחיר ללילה,
+  // כך שגם הנעילה לוכדת את הסכום כמו שהוא. רק ב-PRESETS המחיר הוא ללילה.
+  if(id === 'nightly' && tier !== 'custom') return v * num($('#nights'));
   if(id === 'daily')   return v * num($('#days'));
   if(id === 'trip')    return v * num(document.querySelector('[data-in="tripCount"]'));
   return v;
