@@ -15,6 +15,10 @@
 //     though the path pattern would otherwise match — only the path
 //     segment (bound to request.auth.uid) is trusted, never the
 //     document body.
+//   - Any account other than the owner's, even inside its own
+//     /users/{uid} subtree: access is pinned to the single owner UID,
+//     so an account that somehow gets created has no access at all.
+//     Sign-up is also turned off in the console (2026-10-10).
 
 rules_version = '2';
 
@@ -23,7 +27,8 @@ service cloud.firestore {
 
     match /users/{userId}/{document=**} {
       allow read, write: if request.auth != null
-                         && request.auth.uid == userId;
+                         && request.auth.uid == userId
+                         && request.auth.uid == 'jpyrT8U9vvhomM1o2vDzYdhN5Yg1';
     }
 
     // Documentation only — not doing any security work. Firestore
