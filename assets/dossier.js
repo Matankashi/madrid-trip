@@ -31,7 +31,7 @@ let remoteLoaded = false;
 
 function render(){
   items.forEach(function(el, i){
-    el.classList.toggle('on', !!state['item' + i]);
+    el.classList.toggle('on', !!state[keyOf(el, i)]);
   });
 }
 
@@ -44,8 +44,12 @@ function scheduleSave(){
   }, DEBOUNCE_MS);
 }
 
+// מפתח קבוע מ-data-c="..." אם יש (כך מחיקת פריט לא מזיזה סימונים של אחרים);
+// בלי ערך — המפתח הישן לפי מיקום, item0, item1...
+const keyOf = (el, i) => el.dataset.c || ('item' + i);
+
 items.forEach(function(el, i){
-  const key = 'item' + i;
+  const key = keyOf(el, i);
   el.addEventListener('click', function(){
     el.classList.toggle('on');
     state[key] = el.classList.contains('on');

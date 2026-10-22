@@ -382,6 +382,88 @@ input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var
 }
 .linkbtn:hover{border-color:var(--ink);color:var(--ink)}
 
+/* ---------- לו"ז הימים (dossier.html #plan, assets/itinerary.js) ----------
+   לוח של 14 כרטיסי יום: 7 בשורה בדסקטופ (יוצא מרוחב הטקסט של התיק,
+   עד 1240px), 4 בטאבלט, 2 ואז אחד מתחת לשני בטלפון. RTL — 1.11 מימין.
+   צבע לכל סטטוס דרך --st, מהפלטה ב-:root בלבד. */
+.st-booked{--st:var(--green)}
+.st-planned{--st:var(--blue)}
+.st-optional{--st:var(--gold)}
+.st-open{--st:var(--slate)}
+.st{
+  display:inline-block;font-family:var(--font-mono);font-size:10px;font-weight:600;
+  letter-spacing:.12em;direction:ltr;color:var(--st);
+  border:1.5px solid var(--st);border-radius:2px;padding:1px 6px;line-height:1.5;
+}
+.itin-legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--slate);margin:4px 0 10px}
+.itin-legend > span{display:inline-flex;align-items:center;gap:6px}
+#itinBanner{margin-bottom:10px}
+
+.itin{display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:6px}
+.itin-day{
+  display:flex;flex-direction:column;min-width:0;
+  background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:10px 9px 9px;
+}
+.itin-day.editing,.itin-day[data-day="other"]{grid-column:1/-1}
+.itin-head{text-align:center;padding-bottom:7px;margin-bottom:8px;border-bottom:1px solid var(--line)}
+.itin-date{display:block;font-size:19px;font-weight:600;line-height:1.2;color:var(--ink)}
+.itin-wd{display:block;font-size:12px;color:var(--slate)}
+.itin-list{flex:1;display:flex;flex-direction:column;gap:8px;min-height:40px}
+.itin-item{position:relative;flex:1;display:flex;flex-direction:column}
+.itin-item + .itin-item{border-top:1px dashed var(--line);padding-top:8px}
+.itin-item[draggable="true"]{cursor:grab}
+.itin-item.dragging{opacity:.4}
+.itin-title{font-weight:700;font-size:14.5px;line-height:1.3;text-align:center;padding:0 18px 4px}
+.itin-or{display:block;font-weight:400;font-size:12px;color:var(--slate)}
+.itin-points{list-style:none;margin:2px 0 6px;padding:0;font-size:13px;line-height:1.4}
+.itin-points li{position:relative;padding-right:13px;margin-bottom:4px}
+.itin-points li::before{content:"";position:absolute;right:2px;top:.55em;width:5px;height:5px;border-radius:50%;background:var(--ink)}
+.itin-points li.ic{padding-right:22px}
+.itin-points li.ic::before{content:none}
+.itin-ic{position:absolute;right:0;top:1px;color:var(--ink);line-height:0}
+.itin-tbd{font-size:11.5px;color:var(--rojo);margin:0 0 6px}
+.itin-link{font-size:12.5px;color:var(--ink);margin:0 0 6px;align-self:flex-start}
+.itin-badge{
+  margin-top:auto;text-align:center;font-family:var(--font-mono);font-size:11px;font-weight:600;
+  letter-spacing:.1em;direction:ltr;color:var(--st);padding:4px 0;border-radius:var(--radius);
+  background:color-mix(in srgb,var(--st) 14%,#fff);
+}
+.itin-menu{
+  position:absolute;top:-4px;left:-4px;width:28px;height:28px;padding:0;
+  font-size:16px;line-height:1;color:var(--slate);background:none;border:0;border-radius:var(--radius);cursor:pointer;
+}
+.itin-menu:hover,.itin-menu:focus-visible,.itin-menu[aria-expanded="true"]{color:var(--ink);background:var(--paper);outline:none}
+.itin-acts{display:flex;flex-wrap:wrap;gap:0 12px;margin-top:6px;padding-top:4px;border-top:1px solid var(--line)}
+.itin-btn{font-family:inherit;font-size:12px;min-height:28px;padding:2px 0;border:0;background:none;color:var(--slate);text-decoration:underline;cursor:pointer}
+.itin-btn:hover,.itin-btn:focus-visible{color:var(--ink);outline:none}
+.itin-btn:disabled{opacity:.4;cursor:default;text-decoration:none}
+.itin-confirm{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:var(--slate);padding:4px 0}
+.itin-add{margin-top:auto;text-align:center}
+.itin-item ~ .itin-add,.itin-form ~ .itin-add{margin-top:0}
+.itin-add .addrow{font-size:12px;padding:3px 9px}
+.itin-dropline{height:3px;background:var(--rojo);border-radius:2px;flex:none}
+.itin-form{gap:8px;cursor:auto}
+.itin-field{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--slate);flex:1 1 140px;min-width:0}
+.itin-field input,.itin-field textarea,.itin-field select{
+  width:100%;font-family:inherit;font-size:16px;color:var(--ink);background:#fff;
+  padding:6px 8px;border:1.5px solid var(--line);border-radius:var(--radius);
+}
+.itin-field textarea{resize:vertical;line-height:1.45}
+.itin-field :focus{outline:none;border-color:var(--rojo)}
+.itin-form > .itin-field{flex:none}
+.itin-row{display:flex;flex-wrap:wrap;gap:8px}
+.itin-formacts{display:flex;gap:8px}
+@media(max-width:480px){.itin{grid-template-columns:1fr}}
+@media(min-width:760px){.itin{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(min-width:1100px){
+  .itin{
+    --bw:min(1240px,calc(100vw - 48px));
+    width:var(--bw);margin-left:calc((100% - var(--bw)) / 2);margin-right:calc((100% - var(--bw)) / 2);
+    grid-template-columns:repeat(7,minmax(0,1fr));
+  }
+}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 
 /* חייב להיות אחרון: כלל display של מחלקה (.lockdate-wrap, .lockbtn,

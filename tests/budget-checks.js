@@ -451,7 +451,7 @@ export async function phaseStay() {
   const setNights = async n => { const el = qq('#nights'); el.value = String(n); el.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(150); };
   const expected = Math.round(EXPECTED_CUSTOM_TOTAL + 3122 / 3.5);
 
-  r.ok('stay row renamed', qq('[data-item="nightly"] .name').textContent === 'לינה 1–8.11' && /7 לילות · סכום כולל ששולם/.test(qq('[data-item="nightly"] .hint').textContent));
+  r.ok('stay row renamed', qq('[data-item="nightly"] .name').textContent === 'לינה 1–7.11' && /7 לילות · סכום כולל ששולם/.test(qq('[data-item="nightly"] .hint').textContent));
   r.ok('unlocked: ₪3,122 counts once', Math.abs(total() - expected) <= 1 && qq('[data-amt="nightly"]').textContent === '₪3,122', { shown: qq('#totEur').textContent, amt: qq('[data-amt="nightly"]').textContent, expected });
   await setNights(20);
   r.ok('unlocked: nights does not move the total', Math.abs(total() - expected) <= 1, qq('#totEur').textContent);
@@ -730,7 +730,7 @@ export async function phaseRename() {
   f.remove();
   f = await openFrame(''); w = f.contentWindow; qq = s => w.document.querySelector(s);
   for (let i = 0; i < 30 && !qq('#loadBanner').hidden; i++) await sleep(200);
-  r.ok('after reload: both renames shown', name('airport') === 'מונית לנמל <b>תעופה</b> 1.11' && name('flight') === 'טיסה הלוך · אל על' && name('nightly') === 'לינה 1–8.11');
+  r.ok('after reload: both renames shown', name('airport') === 'מונית לנמל <b>תעופה</b> 1.11' && name('flight') === 'טיסה הלוך · אל על' && name('nightly') === 'לינה 1–7.11');
 
   // preset tier: new name shown, rename hidden; back to custom: visible again
   qq('.tier[data-tier="mid"]').click(); await sleep(250);

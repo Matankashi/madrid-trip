@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local no-cache dev server for testing budget.html without touching real data.
+"""Local no-cache dev server for testing budget.html and dossier.html without touching real data.
 
 Usage:  python3 tests/serve-test.py [port]      (default 8000)
 
@@ -15,20 +15,18 @@ Usage:  python3 tests/serve-test.py [port]      (default 8000)
   failed-load paths. Without ?loadtest it is a plain getDoc.
 - Exposes window.__budgetIdle() (no save waiting or in flight), which
   readDoc() in tests/budget-checks.js waits on instead of a fixed sleep.
+- Does the same for dossier.html: /assets/itinerary.js -> state/itinerary_test
+  (+ __loadDoc, window.__itinIdle) and /assets/dossier.js -> state/checklist_test.
 
 Seed budget_test first (see tests/budget-checks.js), then open
-http://localhost:PORT/budget.html while signed in.
+http://localhost:PORT/budget.html while signed in. Itinerary checks:
+tests/itinerary-checks.js, run from http://localhost:PORT/dossier.html.
 """
 import http.server, os, socketserver, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REWRITES = [
-    ("'state', 'budget')", "'state', 'budget_test')"),
-    ("'madrid.budget.v1'", "'madrid.budget.test'"),
-    ("getDoc(docRef).then(", "__loadDoc(docRef).then("),
-]
-# appended to the served budget.js (function declarations are hoisted)
-LOAD_SHIM = """
+# path -> (replacements, text appended to the served file)
+BUDGET_SHIM = """
 function __loadDoc(ref){
   const mode = new URLSearchParams(location.search).get('loadtest');
   if (mode === 'fail') return Promise.reject(new Error('loadtest: simulated getDoc failure'));
@@ -38,6 +36,25 @@ function __loadDoc(ref){
 // lets tests wait for this page's guarded save (debounce + read + write) to finish
 window.__budgetIdle = () => !savePending;
 """
+REWRITES = {
+    "/assets/budget.js": ([
+        ("'state', 'budget')", "'state', 'budget_test')"),
+        ("'madrid.budget.v1'", "'madrid.budget.test'"),
+        ("getDoc(docRef).then(", "__loadDoc(docRef).then("),
+    ], BUDGET_SHIM),
+    # dossier.html: the itinerary gets the same treatment as the budget
+    # (doc itinerary_test, own localStorage key, ?loadtest hook, idle probe)...
+    "/assets/itinerary.js": ([
+        ("'state', 'itinerary')", "'state', 'itinerary_test')"),
+        ("'madrid.itinerary.v1'", "'madrid.itinerary.test'"),
+        ("getDoc(docRef).then(", "__loadDoc(docRef).then("),
+    ], BUDGET_SHIM.replace("__budgetIdle", "__itinIdle")),
+    # ...and the checklist on the same page is pointed away from the real doc too
+    "/assets/dossier.js": ([
+        ("'state', 'checklist')", "'state', 'checklist_test')"),
+        ("'madrid.checklist.v1'", "'madrid.checklist.test'"),
+    ], ""),
+}
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
@@ -48,15 +65,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self):
-        if self.path.split("?")[0] == "/assets/budget.js":
-            with open(os.path.join(ROOT, "assets", "budget.js"), encoding="utf-8") as f:
+        path = self.path.split("?")[0]
+        if path in REWRITES:
+            subs, shim = REWRITES[path]
+            with open(os.path.join(ROOT, path.lstrip("/")), encoding="utf-8") as f:
                 src = f.read()
-            for old, new in REWRITES:
+            for old, new in subs:
                 if old not in src:
-                    self.send_error(500, "serve-test.py: budget.js no longer contains %r" % old)
+                    self.send_error(500, "serve-test.py: %s no longer contains %r" % (path, old))
                     return
                 src = src.replace(old, new)
-            src += LOAD_SHIM
+            src += shim
             body = src.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/javascript; charset=utf-8")
