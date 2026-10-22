@@ -14,7 +14,11 @@ import { doc, getDoc, runTransaction } from "https://www.gstatic.com/firebasejs/
    - אין מסמך עדיין → העותק המקומי, ואם אין — SEED (הלו"ז המקורי). שום
      דבר לא נכתב עד העריכה הראשונה.
 
-   מבנה המסמך: {items: {id: {day, order, title, desc, status, url, altDay?}}}
+   מבנה המסמך: {items: {id: {day, order, title, desc, status, url, altDay?}},
+                days: {ISO: {title?, kind?}}}
+   days = הכרטיס עצמו, לא פריט: כותרת ליום וסוג יום (צבע ואייקון של
+   האריח בראש הכרטיס). מפתח רק ליום שיש לו לפחות אחד מהם; kind ריק =
+   ניחוש מהתוכן (guessKind). ה-day לא זז עם הפריטים — הוא שייך לתאריך.
    day/altDay = תאריך ISO. order = סדר בתוך היום (מתמספר מחדש 0..n בכל
    הזזה). altDay = תאריך חלופי לפריט שהתאריך שלו עוד לא סופי — הפריט מוצג
    בשני הימים אבל הוא פריט אחד (משחק ברצלונה: 7.11 או 8.11, לה ליגה
@@ -28,6 +32,17 @@ const WEEKDAYS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
 const STATUS_LABEL = { booked: 'BOOKED', planned: 'PLANNED', optional: 'OPTIONAL', open: 'OPEN' };
 const STATUS_HE = { booked: 'סגור', planned: 'מתוכנן', optional: 'אופציונלי', open: 'פתוח' };
 const TITLE_MAX = 120;
+const DAY_TITLE_MAX = 80;
+/* סוג יום → צבע (משתנה מהפלטה, ב-styles.css: .k-*) ואייקון גדול באריח */
+const KIND_HE = { arrival: 'הגעה', football: 'כדורגל', museum: 'מוזיאון', daytrip: 'טיול יום', city: 'העיר', night: 'לילה', open: 'פתוח' };
+const KIND_RULES = [
+  [/נחיתה|טיסה/, 'arrival'],
+  [/אתלטיקו|יום משחק/, 'football'],
+  [/טיול יום|טולדו|סגוביה/, 'daytrip'],
+  [/מוזיאון|פראדו|ריינה סופיה|תיסן/, 'museum'],
+  [/טכנו|מועדון/, 'night'],
+  [/יום פתוח|זמן חופשי/, 'open']
+];
 const DESC_MAX = 600;
 const URL_MAX = 2000;
 
@@ -44,6 +59,7 @@ const SEED = {
     i09: seedItem('09', 0, 'optional', 'מדריד המלכותית', 'קתדרלת אלמודנה · הארמון המלכותי · Madrid de los Austrias · פלאסה מאיור'),
     i10: seedItem('10', 0, 'optional', 'טיול יום לסגוביה', 'אמת המים הרומית · העיר העתיקה · האלקסר'),
     i11: seedItem('11', 0, 'optional', 'ריינה סופיה', 'גרניקה (פיקאסו) · אמנות מודרנית ועכשווית · ערב אופציונלי: Erik Truffaz & Antonio Lizana'),
+    i11b: seedItem('11', 1, 'optional', 'מוזיאון תיסן-בורנמיסה', 'אוסף אירופי מהרנסנס ועד הפופ-ארט · ליד הפראדו וריינה סופיה'),
     i12: seedItem('12', 0, 'optional', 'מדריד ריו ומטדרו', 'הליכה לאורך הנהר · תרבות עכשווית · תערוכות · ערב אופציונלי: Peeping Tom – Chroniques'),
     i13: seedItem('13', 0, 'optional', 'לילה של טכנו', 'להכיר את סצנת המוזיקה האלקטרונית של מדריד'),
     i14: seedItem('14', 0, 'open', 'יום פתוח', 'זמן חופשי · סקירת התוכניות · הצעדים הבאים (להאריך?)')
@@ -54,6 +70,7 @@ const $ = s => document.querySelector(s);
 const clone = o => JSON.parse(JSON.stringify(o));
 
 let items = {};
+let days = {};
 let foreignTop = {};
 /* מצב תצוגה בלבד, לא נשמר:
    editing = {id, isNew, at, vals, err} — הטופס הפתוח (at = היום שבו נפתח,
@@ -61,21 +78,33 @@ let foreignTop = {};
    dragId = הפריט שנגרר כרגע. menuFor = הפריט שתפריט הפעולות שלו (⋯) פתוח
    ('alt:'+id לכרטיס החלופי). */
 let editing = null;
+let dayEdit = null; // {day, vals:{title, kind}} — עורך הכרטיס (היום) הפתוח
 let menuFor = null;
 let confirmDel = null;
 let dragId = null;
 
 function applyState(data){
-  items = {}; foreignTop = {};
-  Object.keys(data || {}).forEach(k => { if (k !== 'items') foreignTop[k] = data[k]; });
+  items = {}; days = {}; foreignTop = {};
+  Object.keys(data || {}).forEach(k => { if (k !== 'items' && k !== 'days') foreignTop[k] = data[k]; });
+  const ds = (data && data.days && typeof data.days === 'object') ? data.days : {};
+  Object.keys(ds).forEach(d => { if (ds[d] && typeof ds[d] === 'object') days[d] = Object.assign({}, ds[d]); });
   const src = (data && data.items && typeof data.items === 'object') ? data.items : {};
   Object.keys(src).forEach(id => { if (src[id] && typeof src[id] === 'object') items[id] = Object.assign({}, src[id]); });
-  editing = null; confirmDel = null; menuFor = null;
+  editing = null; dayEdit = null; confirmDel = null; menuFor = null;
 }
 
 function getState(){
-  return Object.assign({}, foreignTop, { items: clone(items) });
+  return Object.assign({}, foreignTop, { items: clone(items), days: clone(days) });
 }
+
+function guessKind(day){
+  const ids = itemsOn(day).concat(altsOn(day));
+  if (!ids.length) return 'open';
+  const text = ids.map(id => `${items[id].title || ''} ${items[id].desc || ''}`).join(' ');
+  const r = KIND_RULES.find(([re]) => re.test(`${items[ids[0]].title || ''}`)) || KIND_RULES.find(([re]) => re.test(text));
+  return r ? r[1] : 'city';
+}
+const kindOf = day => (days[day] && KIND_HE[days[day].kind]) ? days[day].kind : guessKind(day);
 
 /* ---------- סדר וימים ---------- */
 const orderOf = id => Number(items[id].order) || 0;
@@ -144,8 +173,14 @@ const ICONS = {
   note: '<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>',
   masks: '<path d="M3 5h9v5a4.5 4.5 0 0 1-9 0z"/><path d="M12 9h9v5a4.5 4.5 0 0 1-9 0"/><path d="M6 12.5c1 1 2 1 3 0M15 16.5c1-1 2-1 3 0"/>',
   headphones: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>',
-  search: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>'
+  search: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>',
+  // אריח הכרטיס (סוג יום)
+  frame: '<rect x="3" y="4" width="18" height="16" rx="1"/><rect x="6.5" y="7.5" width="11" height="9"/><path d="M6.5 15l3.5-3.5 2.5 2.5 2-2 3 3"/>',
+  train: '<rect x="5" y="3" width="14" height="13" rx="3"/><path d="M5 10h14"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M8 20l2-4M16 20l-2-4"/>',
+  columns: '<path d="M3 21h18M4 9h16M12 3l9 5H3z"/><path d="M6 9v9M10 9v9M14 9v9M18 9v9M4 18h16"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'
 };
+const KIND_ICON = { arrival: 'plane', football: 'ball', museum: 'frame', daytrip: 'train', city: 'columns', night: 'headphones', open: 'sun' };
 // הסדר קובע: הכלל הראשון שמתאים מנצח
 const ICON_RULES = [
   [/נחיתה|טיסה|הצעדים הבאים|להאריך/, 'plane'],
@@ -286,9 +321,20 @@ function renderDay(day){
   const other = day === null;
   const editingHere = editing && (other ? !TRIP_DAYS.includes(editing.at) : editing.at === day);
   const block = h('div', { class: 'itin-day' + (editingHere ? ' editing' : ''), 'data-day': other ? 'other' : day });
-  block.appendChild(h('div', { class: 'itin-head' },
+  const head = h('div', { class: 'itin-head' },
     h('span', { class: 'mono itin-date' }, other ? '—' : fmtDay(day)),
-    h('span', { class: 'itin-wd' }, other ? 'תאריך מחוץ לטווח הטיול' : weekday(day))));
+    h('span', { class: 'itin-wd' }, other ? 'תאריך מחוץ לטווח הטיול' : weekday(day)));
+  if (!other) head.appendChild(h('button', { type: 'button', class: 'itin-dayedit', 'data-act': 'dayedit', 'data-id': day, 'aria-label': `עריכת הכרטיס של ${fmtDay(day)} (כותרת וסוג יום)` }, '✎'));
+  block.appendChild(head);
+  if (!other) {
+    const kind = kindOf(day);
+    block.classList.add('k-' + kind);
+    const tile = h('div', { class: 'itin-tile', 'data-kind': kind, title: KIND_HE[kind] });
+    tile.innerHTML = svg(ICONS[KIND_ICON[kind]]).replace('width="15" height="15"', 'width="38" height="38"').replace('stroke-width="1.8"', 'stroke-width="1.4"');
+    block.appendChild(tile);
+    if (dayEdit && dayEdit.day === day) block.appendChild(renderDayForm(day));
+    else if (days[day] && days[day].title) block.appendChild(h('div', { class: 'itin-daytitle', 'data-daytitle': day, text: String(days[day].title) }));
+  }
   const list = h('div', { class: 'itin-list', 'data-list': other ? 'other' : day });
   if (!other) altsOn(day).forEach(id => list.appendChild(editing && editing.id === id && editing.at === day ? renderForm() : renderAlt(id)));
   const main = other ? Object.keys(items).filter(id => !TRIP_DAYS.includes(items[id].day)).sort() : itemsOn(day);
@@ -299,12 +345,47 @@ function renderDay(day){
   return block;
 }
 
+function renderDayForm(day){
+  const v = dayEdit.vals;
+  const field = (label, input) => h('label', { class: 'itin-field' }, h('span', {}, label), input);
+  const title = h('input', { type: 'text', 'data-df': 'title', maxlength: DAY_TITLE_MAX, value: v.title, placeholder: 'בלי כותרת' });
+  const kind = h('select', { 'data-df': 'kind' });
+  kind.appendChild(h('option', { value: '' }, `אוטומטי (${KIND_HE[guessKind(day)]})`));
+  Object.keys(KIND_HE).forEach(k => kind.appendChild(h('option', { value: k, selected: k === v.kind }, KIND_HE[k])));
+  return h('div', { class: 'itin-dayform', 'data-dayform': day },
+    field('כותרת היום', title),
+    field('סוג יום (צבע ואייקון)', kind),
+    h('div', { class: 'itin-formacts' },
+      h('button', { type: 'button', class: 'addok', 'data-act': 'daysave', 'data-id': day }, 'שמירה'),
+      h('button', { type: 'button', class: 'addcancel', 'data-act': 'daycancel', 'data-id': day }, 'ביטול')));
+}
+
+/* סיכום מתחת ללוח, נגזר מהפריטים בלבד (אין עותק שני לערוך): סגור /
+   מתוכנן / אופציונלי, כל פריט "תאריך · כותרת" לפי סדר הימים. השורה של
+   הלינה (Onefam) קבועה ב-HTML — היא לא פעילות ולא פריט בלוח. */
+function renderSummary(){
+  const order = id => [TRIP_DAYS.indexOf(items[id].day), orderOf(id), id];
+  const cmp = (a, b) => { const x = order(a), y = order(b); return (x[0] - y[0]) || (x[1] - y[1]) || (x[2] < y[2] ? -1 : 1); };
+  ['booked', 'planned', 'optional'].forEach(st => {
+    const ul = document.querySelector(`[data-sum="${st}"]`);
+    if (!ul) return;
+    ul.textContent = '';
+    Object.keys(items).filter(id => statusOf(id) === st).sort(cmp).forEach(id => {
+      const it = items[id];
+      const when = it.altDay ? `${fmtDay(it.day)} / ${fmtDay(it.altDay)}` : fmtDay(it.day);
+      ul.appendChild(h('li', { 'data-sum-item': id }, h('span', { class: 'mono itin-sumdate', text: when }), h('span', { text: String(it.title || '') })));
+    });
+    if (!ul.children.length) ul.appendChild(h('li', { class: 'itin-sumempty', text: '—' }));
+  });
+}
+
 function render(focusSel){
   const root = $('#itin');
   if (!root) return;
   root.textContent = '';
   TRIP_DAYS.forEach(d => root.appendChild(renderDay(d)));
   if (Object.keys(items).some(id => !TRIP_DAYS.includes(items[id].day))) root.appendChild(renderDay(null));
+  renderSummary();
   const f = focusSel && root.querySelector(focusSel);
   if (f) f.focus();
 }
@@ -317,7 +398,7 @@ function announce(msg){
 /* ---------- פעולות ---------- */
 function openEdit(id, at){
   const it = items[id];
-  menuFor = null;
+  menuFor = null; dayEdit = null;
   editing = { id, isNew: false, at, err: '', vals: { title: String(it.title || ''), desc: String(it.desc || ''), day: it.day, altDay: it.altDay || '', status: statusOf(id), url: String(it.url || '') } };
   confirmDel = null;
   render(`[data-form="${id}"] [data-f="title"]`);
@@ -354,11 +435,32 @@ function onAct(act, id){
   if (loadState !== 'ready') return;
   const it = items[id];
   if (act === 'add') {
+    dayEdit = null;
     editing = { id: null, isNew: true, at: id, err: '', vals: { title: '', desc: '', day: id, altDay: '', status: 'planned', url: '' } };
     confirmDel = null;
     return render('[data-form="new"] [data-f="title"]');
   }
   if (act === 'save') return saveEdit();
+  if (act === 'dayedit') {
+    const d = days[id] || {};
+    editing = null; menuFor = null; confirmDel = null;
+    dayEdit = { day: id, vals: { title: String(d.title || ''), kind: KIND_HE[d.kind] ? d.kind : '' } };
+    return render(`[data-dayform="${id}"] [data-df="title"]`);
+  }
+  if (act === 'daycancel') { dayEdit = null; return render(`[data-act="dayedit"][data-id="${id}"]`); }
+  if (act === 'daysave') {
+    if (!dayEdit || dayEdit.day !== id) return;
+    const v = dayEdit.vals;
+    const entry = Object.assign({}, days[id] || {});
+    const title = v.title.trim().slice(0, DAY_TITLE_MAX);
+    if (title) entry.title = title; else delete entry.title;
+    if (KIND_HE[v.kind]) entry.kind = v.kind; else delete entry.kind;
+    if (Object.keys(entry).length) days[id] = entry; else delete days[id];
+    dayEdit = null;
+    scheduleSave();
+    render(`[data-act="dayedit"][data-id="${id}"]`);
+    return announce(`נשמר: ${fmtDay(id)}`);
+  }
   if (act === 'cancel') { const back = editing && !editing.isNew ? editing.id : null; const at = editing && editing.at; editing = null; return render(back ? `[data-item="${back}"] [data-act="menu"], [data-alt="${back}"] [data-act="menualt"]` : `[data-act="add"][data-id="${at}"]`); }
   if (!it) return;
   if (act === 'menu' || act === 'menualt') {
@@ -406,15 +508,21 @@ function wire(){
     const b = e.target.closest('[data-act]');
     if (b && root.contains(b)) onAct(b.dataset.act, b.dataset.id);
   });
-  root.addEventListener('input', e => {
+  const keep = e => {
     const f = e.target.closest('[data-f]');
     if (f && editing) editing.vals[f.dataset.f] = f.value;
-  });
-  root.addEventListener('change', e => {
-    const f = e.target.closest('[data-f]');
-    if (f && editing) editing.vals[f.dataset.f] = f.value;
-  });
+    const df = e.target.closest('[data-df]');
+    if (df && dayEdit) dayEdit.vals[df.dataset.df] = df.value;
+  };
+  root.addEventListener('input', keep);
+  root.addEventListener('change', keep);
   root.addEventListener('keydown', e => {
+    const dayForm = e.target.closest('[data-dayform]');
+    if (dayForm && dayEdit) {
+      if (e.key === 'Escape') { e.preventDefault(); onAct('daycancel', dayEdit.day); }
+      else if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); onAct('daysave', dayEdit.day); }
+      return;
+    }
     if (!editing || !e.target.closest('[data-form]')) return;
     if (e.key === 'Escape') { e.preventDefault(); onAct('cancel'); }
     else if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); onAct('save'); }

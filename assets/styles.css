@@ -408,6 +408,30 @@ input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var
 .itin-head{text-align:center;padding-bottom:7px;margin-bottom:8px;border-bottom:1px solid var(--line)}
 .itin-date{display:block;font-size:19px;font-weight:600;line-height:1.2;color:var(--ink)}
 .itin-wd{display:block;font-size:12px;color:var(--slate)}
+.itin-head{position:relative}
+.itin-dayedit{
+  position:absolute;top:-4px;left:-2px;width:28px;height:28px;padding:0;font-size:14px;line-height:1;
+  color:var(--slate);background:none;border:0;border-radius:var(--radius);cursor:pointer;
+}
+.itin-dayedit:hover,.itin-dayedit:focus-visible{color:var(--ink);background:var(--paper);outline:none}
+/* אריח בראש הכרטיס, במקום תמונה: צבע לפי סוג יום + אייקון קו גדול */
+.k-arrival{--kind:var(--slate)}
+.k-football{--kind:var(--rojo)}
+.k-museum{--kind:var(--gold)}
+.k-daytrip{--kind:var(--green)}
+.k-city{--kind:var(--blue)}
+.k-night{--kind:var(--ink)}
+.k-open{--kind:var(--sand)}
+.itin-tile{
+  display:flex;align-items:center;justify-content:center;height:66px;margin:-2px 0 9px;
+  color:var(--kind);border-radius:var(--radius);
+  background:
+    repeating-linear-gradient(135deg,transparent 0 10px,color-mix(in srgb,var(--kind) 7%,transparent) 10px 20px),
+    color-mix(in srgb,var(--kind) 15%,#fff);
+}
+.itin-daytitle{font-family:var(--font-display);font-size:16px;line-height:1.25;text-align:center;margin:0 0 8px}
+.itin-dayform{display:flex;flex-direction:column;gap:8px;margin:0 0 10px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.itin-dayform > .itin-field{flex:none}
 .itin-list{flex:1;display:flex;flex-direction:column;gap:8px;min-height:40px}
 .itin-item{position:relative;flex:1;display:flex;flex-direction:column}
 .itin-item + .itin-item{border-top:1px dashed var(--line);padding-top:8px}
@@ -453,6 +477,27 @@ input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var
 .itin-form > .itin-field{flex:none}
 .itin-row{display:flex;flex-wrap:wrap;gap:8px}
 .itin-formacts{display:flex;gap:8px}
+/* סיכום מתחת ללוח (נגזר מהפריטים) */
+.itin-summary{display:grid;gap:10px;margin-top:16px}
+.sum{background:#fff;border:1px solid var(--line);border-top:4px solid var(--st);border-radius:var(--radius);padding:11px 13px}
+.sum-h{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;margin-bottom:7px}
+.sum ul{list-style:none;margin:0;padding:0;font-size:13.5px}
+.sum li{display:flex;gap:10px;padding:3px 0}
+.itin-sumdate{flex:none;min-width:62px;color:var(--slate);font-size:12.5px}
+.sum-fixed{font-weight:600}
+@media(min-width:760px){.itin-summary{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+/* המטרה — בראש התיק */
+.goal{border-color:var(--green);border-right-width:5px;margin-top:22px}
+.goal .tag{color:var(--green)}
+.goal-h{font-family:var(--font-display);font-size:20px;line-height:1.25;margin-bottom:4px}
+.goal-list{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px 18px}
+.goal-list li{position:relative;padding-right:24px;margin:0;font-size:14.5px}
+.goal-list li::before{
+  content:"✓";position:absolute;right:0;top:1px;width:17px;height:17px;border-radius:50%;
+  background:var(--green);color:#fff;font-size:11px;line-height:17px;text-align:center;
+}
+
 @media(max-width:480px){.itin{grid-template-columns:1fr}}
 @media(min-width:760px){.itin{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media(min-width:1100px){

@@ -78,6 +78,8 @@ const titleOf = (p, id) => (p.qq(`[data-item="${id}"] .itin-title`) || {}).textC
 // what the page shows, day by day — compared across reloads
 const snapshot = p => p.qa('.itin-day').map(d => ({
   day: d.dataset.day,
+  kind: [...d.classList].find(c => c.startsWith('k-')) || '',
+  dayTitle: (d.querySelector('.itin-daytitle') || {}).textContent || '',
   main: [...d.querySelectorAll('[data-item]')].map(c => [c.dataset.item, c.querySelector('.itin-title').textContent, c.className, (c.querySelector('.itin-link') || {}).href || '', [...c.querySelectorAll('.itin-points li')].map(li => li.textContent).join('|')]),
   alt: [...d.querySelectorAll('[data-alt]')].map(c => c.dataset.alt)
 }));
@@ -111,7 +113,7 @@ export async function phaseMain() {
   const A = await open();
   r.ok('loads ready', A.qq('#itinBanner').hidden && !isInert(A.qq('#itin')), A.qq('#itinBanner').textContent);
   r.ok('14 day blocks, 1.11 to 14.11', A.qa('.itin-day').length === 14 && A.qq('.itin-day .itin-date').textContent === '1.11' && A.qa('.itin-date').pop().textContent === '14.11');
-  r.ok('13 items + one alt occurrence', A.qa('[data-item]').length === 13 && A.qa('[data-alt]').length === 1);
+  r.ok('14 items (Thyssen on 11.11) + one alt occurrence', A.qa('[data-item]').length === 14 && mainIds(A, D(11)).join() === 'i11,i11b' && A.qq('[data-item="i11b"]').classList.contains('st-optional') && A.qa('[data-alt]').length === 1);
   r.ok('weekday: 1.11 is Sunday, 14.11 Saturday', A.qq('.itin-wd').textContent === 'יום א׳' && A.qa('.itin-wd').pop().textContent === 'יום ש׳');
   r.ok('Barcelona: one item, on 7.11 and as an alt on 8.11', mainIds(A, D(7)).join() === 'i07' && altIds(A, D(8)).join() === 'i07' && mainIds(A, D(8)).length === 0);
   r.ok('Barcelona: marked as an unresolved date', /7\.11 או 8\.11/.test(A.qq('[data-item="i07"] .itin-tbd').textContent));
@@ -145,6 +147,19 @@ export async function phaseMain() {
     r.ok(`${wpx}px: ${cols} per row, no horizontal scroll`, firstRow(T) === cols && T.w.document.documentElement.scrollWidth <= T.w.innerWidth, { first: firstRow(T), sw: T.w.document.documentElement.scrollWidth });
     T.f.remove();
   }
+  // poster tiles: a colour + icon per day type, guessed from the content
+  const kinds = A.qa('.itin-day').map(d => [...d.classList].find(c => c.startsWith('k-')).slice(2));
+  r.ok('tile kind per day', kinds.join() === 'arrival,city,football,museum,daytrip,museum,football,football,city,daytrip,museum,city,night,open', kinds);
+  r.ok('tile has a big icon and the kind colour', !!A.qq('[data-day="2026-11-03"] .itin-tile svg') && A.w.getComputedStyle(A.qq('[data-day="2026-11-03"] .itin-tile')).color === 'rgb(196, 38, 46)');
+  // summary under the board, derived from the items
+  const sum = st => A.qa(`[data-sum="${st}"] [data-sum-item]`).map(li => li.dataset.sumItem);
+  r.ok('summary: booked = Onefam line + the three booked items', /Onefam/.test(A.qq('.sum.st-booked .sum-fixed').textContent) && sum('booked').join() === 'i01,i03,i07', sum('booked'));
+  r.ok('summary: Barcelona shows both dates', /7\.11 \/ 8\.11/.test(A.qq('[data-sum-item="i07"]').textContent));
+  r.ok('summary: planned', sum('planned').join() === 'i02,i04,i05,i06', sum('planned'));
+  r.ok('summary: optional incl. Thyssen', sum('optional').join() === 'i09,i10,i11,i11b,i12,i13', sum('optional'));
+  // goal box at the top, the stale "not yet decided" box gone, timeline not built
+  r.ok('goal box at the top', !!A.qq('.box.goal') && A.qq('.box.goal').compareDocumentPosition(A.qq('nav')) === 4 && A.qa('.goal-list li').length === 5);
+  r.ok('NOT YET DECIDED box removed', !/NOT YET DECIDED/.test(A.w.document.body.textContent));
   r.ok('legend shows the four statuses', A.qa('.itin-legend .st').map(x => x.textContent).join() === 'BOOKED,PLANNED,OPTIONAL,OPEN');
   r.ok('RTL page, Hebrew titles', A.w.document.documentElement.dir === 'rtl' && titleOf(A, 'i01') === 'נחיתה במדריד');
   await sleep(1500);
@@ -159,8 +174,9 @@ export async function phaseMain() {
   r.ok('saved card shows the new values', titleOf(A, 'i02') === 'בדיקה: רטירו' && A.qq('[data-item="i02"]').classList.contains('st-optional') && A.qq('[data-item="i02"] .itin-badge').textContent === 'OPTIONAL' && A.qq('[data-item="i02"] .itin-points li').textContent === 'תיאור בדיקה' && A.qq('[data-item="i02"] .itin-link').href === 'https://example.com/x' && A.qq('[data-item="i02"] .itin-link').target === '_blank');
   r.ok('after saving, the card is back in the grid', A.qq(`[data-day="${D(2)}"]`).getBoundingClientRect().width < 300);
   let d = await docWhen(x => x.items.i02.title === 'בדיקה: רטירו');
+  r.ok('summary follows the edit (PLANNED -> OPTIONAL)', sum('planned').join() === 'i04,i05,i06' && sum('optional')[0] === 'i02');
   r.ok('edit persisted', d && d.items.i02.desc === 'תיאור בדיקה' && d.items.i02.status === 'optional' && d.items.i02.url === 'example.com/x' && d.items.i02.day === D(2), d && d.items.i02);
-  r.ok('first save writes the whole seed', d && Object.keys(d.items).length === 13 && d.items.i07.altDay === D(8));
+  r.ok('first save writes the whole seed', d && Object.keys(d.items).length === 14 && d.items.i07.altDay === D(8));
 
   act(A, 'edit', 'i02'); setF(A, 'url', 'javascript:alert(1)'); act(A, 'save', 'i02');
   r.ok('invalid link refused, form stays open with an error', !!A.qq('[data-form="i02"]') && /הקישור לא תקין/.test(A.qq('[data-form="i02"] .linkerr').textContent));
@@ -222,6 +238,24 @@ export async function phaseMain() {
   act(A, 'edit', 'i07'); setF(A, 'day', D(7)); setF(A, 'altDay', D(8)); act(A, 'save', 'i07');
   r.ok('back to 7.11 with 8.11 as the alt', mainIds(A, D(7)).join() === 'i07' && altIds(A, D(8)).join() === 'i07');
 
+  // 6b. the day card itself: title + day type
+  act(A, 'dayedit', D(5));
+  r.ok('day editor opens on the card', !!A.qq(`[data-dayform="${D(5)}"]`) && A.qq(`[data-dayform="${D(5)}"] [data-df="kind"]`).value === '' && /אוטומטי \(טיול יום\)/.test(A.qq(`[data-dayform="${D(5)}"] [data-df="kind"] option`).textContent));
+  const setDF = (name, v) => { const el = A.qq(`[data-dayform] [data-df="${name}"]`); el.value = v; el.dispatchEvent(new A.w.Event('input', { bubbles: true })); el.dispatchEvent(new A.w.Event('change', { bubbles: true })); };
+  setDF('title', 'יום טולדו'); setDF('kind', 'night'); act(A, 'daysave', D(5));
+  r.ok('day title shown on the card', A.qq(`[data-daytitle="${D(5)}"]`).textContent === 'יום טולדו' && A.qq(`[data-day="${D(5)}"]`).classList.contains('k-night'));
+  r.ok('items of the day untouched', mainIds(A, D(5)).join() === 'i05' && titleOf(A, 'i05') === 'טיול יום לטולדו');
+  d = await docWhen(x => x.days && x.days[D(5)]);
+  r.ok('day card persisted', d && d.days[D(5)].title === 'יום טולדו' && d.days[D(5)].kind === 'night', d && d.days);
+  act(A, 'dayedit', D(5)); setDF('title', 'לא יישמר'); A.qq('[data-dayform] [data-df="title"]').dispatchEvent(new A.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  r.ok('day editor: Escape cancels', A.qq(`[data-daytitle="${D(5)}"]`).textContent === 'יום טולדו' && !A.qq('[data-dayform]'));
+  act(A, 'dayedit', D(5)); setDF('kind', ''); A.qq('[data-dayform] [data-df="title"]').dispatchEvent(new A.w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  r.ok('day editor: Enter saves; kind back to automatic', A.qq(`[data-day="${D(5)}"]`).classList.contains('k-daytrip'));
+  act(A, 'dayedit', D(6)); setDF('title', 'פראדו, חלק שני'); act(A, 'daysave', D(6));
+  act(A, 'dayedit', D(6)); setDF('title', '  '); act(A, 'daysave', D(6));
+  d = await docWhen(x => x.days && !x.days[D(6)] && x.days[D(5)] && !x.days[D(5)].kind);
+  r.ok('empty title + automatic kind removes the day entry', d && !d.days[D(6)] && d.days[D(5)].title === 'יום טולדו' && !A.qq(`[data-daytitle="${D(6)}"]`), d && d.days);
+
   // 7. add
   act(A, 'add', D(5)); act(A, 'save', 'new');
   r.ok('add: empty title refused', !!A.qq('[data-form="new"] .linkerr'));
@@ -255,6 +289,7 @@ export async function phaseMain() {
   A.f.remove();
   const B = await open();
   r.ok('reload: identical itinerary', JSON.stringify(snapshot(B)) === JSON.stringify(before));
+  r.ok('reload: day title kept', B.qq(`[data-daytitle="${D(5)}"]`).textContent === 'יום טולדו');
   r.ok('reload: values from the doc', titleOf(B, 'i02') === 'רטירו' && mainIds(B, D(2)).join() === 'i02' && B.qq('[data-item="i02"] .itin-link').href === 'https://example.com/x');
   B.f.remove();
 
@@ -314,7 +349,7 @@ export async function phaseLoad() {
   await guard();
   const r = reporter();
   const realBefore = await realSnap();
-  const base = { items: { i01: { day: D(1), order: 0, title: 'מהשרת', desc: '', status: 'booked', url: '', extra: 'keep' } }, futureField: { a: 1 } };
+  const base = { items: { i01: { day: D(1), order: 0, title: 'מהשרת', desc: '', status: 'booked', url: '', extra: 'keep' } }, days: { [D(2)]: { title: 'שמור', future: 1 } }, futureField: { a: 1 } };
   const localCopy = { items: { i01: { day: D(1), order: 0, title: 'מקומי', desc: '', status: 'planned', url: '' } } };
 
   // slow load: inert + nothing saved by clicks made before it resolves
@@ -330,7 +365,7 @@ export async function phaseLoad() {
   // unknown fields survive a save
   act(P, 'edit', 'i01'); setF(P, 'desc', 'נוסף'); act(P, 'save', 'i01');
   let d = await docWhen(x => x.items.i01.desc === 'נוסף');
-  r.ok('unknown top-level and item fields are kept', d && d.futureField && d.futureField.a === 1 && d.items.i01.extra === 'keep', d);
+  r.ok('unknown top-level, item and day fields are kept', d && d.futureField && d.futureField.a === 1 && d.items.i01.extra === 'keep' && d.days[D(2)].future === 1 && d.days[D(2)].title === 'שמור', d);
   P.f.remove();
 
   // failed load with a local copy: read-only, local shown, nothing written
@@ -345,7 +380,7 @@ export async function phaseLoad() {
   // failed load, no local copy: the original itinerary, read-only
   localStorage.removeItem(LOCAL_KEY);
   P = await open('loadtest=fail');
-  r.ok('fail, no local: seed shown read-only', P.qa('[data-item]').length === 13 && isInert(P.qq('#itin')) && /אין עותק שמור/.test(P.qq('#itinBanner').textContent));
+  r.ok('fail, no local: seed shown read-only', P.qa('[data-item]').length === 14 && isInert(P.qq('#itin')) && /אין עותק שמור/.test(P.qq('#itinBanner').textContent));
   P.f.remove();
 
   // no doc yet + a local copy (e.g. edited offline before the first save): local wins

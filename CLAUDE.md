@@ -47,7 +47,9 @@ Hosting. האתר עצמו יושב על GitHub Pages.
     `data-c` ריק → המפתח הישן לפי מיקום (`item0`, `item1`...). **משימה
     חדשה מקבלת `data-c` עם שם קבוע משלה**, אחרת מחיקה/הזזה מזיזה סימונים.
     מפתחות של משימות שנמחקו נשארים במסמך ולא מוצגים. שאר המשימות עברו
-    ל-ProjectsDash; כאן רק מה שעוד פתוח לטיול עצמו.
+    ל-ProjectsDash; כאן רק מה שעוד פתוח לטיול עצמו. גם ציר הזמן של
+    "איך זה קורה" (Workaway) נשאר ב-ProjectsDash ולא נכנס לתיק; בתיק רק
+    קופסת המטרה ("להישאר בספרד", `.box.goal`) בראש העמוד.
   - `budget` — כל הערכים, המטבעות, השערים, הנעילות והמתגים של
     `budget.html`, ב-`assets/budget.js`. מבנה
     `{tier:'lean'|'mid'|'rich'|'custom', custom:{values:{...}, currencies:{...}}, toggles:{...}, rates:{usd:{value,updatedAt}, ils:{value,updatedAt}}, locks:{id:{amount,currency,rate,chargedOn}}, userRows:{u_id:{label,group,createdAt,splitFrom?,after?}}, rowMeta:{id:{desc,url}}, rowLabels:{id:label}}`.
@@ -250,7 +252,7 @@ Hosting. האתר עצמו יושב על GitHub Pages.
     ימחק אותו בשקט.
   - `itinerary` — לו"ז הימים של פרק 09 ב-`dossier.html`, ב-
     `assets/itinerary.js`. מבנה `{items:{id:{day, order, title, desc,
-    status, url, altDay?}}}`; `day`/`altDay` תאריך ISO, `order` סדר בתוך
+    status, url, altDay?}}, days:{ISO:{title?, kind?}}}`; `day`/`altDay` תאריך ISO, `order` סדר בתוך
     היום (מתמספר מחדש 0..n בכל הזזה), `status` אחד מ-`booked`/`planned`/
     `optional`/`open` (צבע לכל אחד: `.st-*` ב-`styles.css`, ירוק/כחול/
     זהב/אפור). **`altDay`** = תאריך חלופי לפריט שהתאריך שלו עוד לא סופי
@@ -275,6 +277,15 @@ Hosting. האתר עצמו יושב על GitHub Pages.
     מאחורי כפתור ⋯ בכל פריט (`menuFor`); כרטיס בעריכה תופס שורה שלמה.
     כל הכרטיס (גם הכותרת) הוא אזור שחרור בגרירה. ביום החלופי (8.11)
     הנקודות נבנות מהתאריכים: "יום משחק (אם לא ב-7.11) · זמן חופשי".
+    **הכרטיס עצמו** (`v1.21`, `days[ISO]`): כותרת ליום וסוג יום, בעורך
+    שנפתח מ-✎ ליד התאריך; לא זז עם הפריטים — שייך לתאריך. מפתח רק ליום
+    שיש לו כותרת או סוג; ריק → נמחק. **אריח** במקום תמונה (בלי קבצים ובלי
+    סמלי מועדונים): צבע ואייקון לפי סוג יום (`KIND_ICON`, `.k-*` ב-
+    `styles.css`) — הגעה אפור-כחול, כדורגל אדום, מוזיאון זהב, טיול יום
+    ירוק, העיר כחול, לילה כהה, פתוח חול. `kind` ריק = ניחוש מהתוכן
+    (`guessKind`/`KIND_RULES`: קודם לפי כותרת הפריט הראשון). **סיכום**
+    מתחת ללוח (`renderSummary`): סגור / מתוכנן / אופציונלי, נגזר מהפריטים
+    בלבד; שורת הלינה (Onefam, 1–14.11) קבועה ב-HTML כי היא לא פעילות.
     טקסט של המשתמש נכנס ל-DOM רק דרך `textContent`; קישור דרך
     `normalizeUrl` (אותו כלל כמו ב-budget.js, וקישור לא תקין נדחה בשמירה).
     בדיקה: `tests/itinerary-checks.js`.
