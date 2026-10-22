@@ -2,7 +2,7 @@ import { auth, db } from './firebase-init.js';
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import { doc, getDoc, runTransaction } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 
-/* לו"ז הימים בתיק הטיול (פרק 09, "מבנה הימים").
+/* לו"ז הימים בתיק הטיול (פרק 08, "מבנה הימים").
    מקור האמת הוא Firestore, ב-/users/{uid}/state/itinerary, עם גיבוי
    אופליין ב-localStorage. הטעינה והשמירה הן בדיוק הדפוס של budget.js:
    - טעינה היא getDoc חד-פעמי (לא onSnapshot), כדי שהד של כתיבה לא ינחת
@@ -362,7 +362,8 @@ function renderDayForm(day){
 
 /* סיכום מתחת ללוח, נגזר מהפריטים בלבד (אין עותק שני לערוך): סגור /
    מתוכנן / אופציונלי, כל פריט "תאריך · כותרת" לפי סדר הימים. השורה של
-   הלינה (Onefam) קבועה ב-HTML — היא לא פעילות ולא פריט בלוח. */
+   הלינה (Onefam 1–8.11, ו-8–14.11 שעוד פתוח) קבועות ב-HTML — הן לא
+   פעילות ולא פריטים בלוח. */
 function renderSummary(){
   const order = id => [TRIP_DAYS.indexOf(items[id].day), orderOf(id), id];
   const cmp = (a, b) => { const x = order(a), y = order(b); return (x[0] - y[0]) || (x[1] - y[1]) || (x[2] < y[2] ? -1 : 1); };

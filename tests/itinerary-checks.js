@@ -153,7 +153,7 @@ export async function phaseMain() {
   r.ok('tile has a big icon and the kind colour', !!A.qq('[data-day="2026-11-03"] .itin-tile svg') && A.w.getComputedStyle(A.qq('[data-day="2026-11-03"] .itin-tile')).color === 'rgb(196, 38, 46)');
   // summary under the board, derived from the items
   const sum = st => A.qa(`[data-sum="${st}"] [data-sum-item]`).map(li => li.dataset.sumItem);
-  r.ok('summary: booked = Onefam line + the three booked items', /Onefam/.test(A.qq('.sum.st-booked .sum-fixed').textContent) && sum('booked').join() === 'i01,i03,i07', sum('booked'));
+  r.ok('summary: booked = Onefam line + the three booked items', /1–8\.11.*Onefam.*7 לילות/.test(A.qq('.sum.st-booked .sum-fixed').textContent) && /8–14\.11.*6 לילות.*פתוח, ייקבע במקום/.test(A.qq('.sum-open').textContent) && /Onefam[\s\S]*1–8\.11[\s\S]*שולם/.test(A.qq('#stay').textContent) && !/1–14\.11/.test(A.qq('#stay').textContent + A.qq('.itin-summary').textContent) && sum('booked').join() === 'i01,i03,i07', sum('booked'));
   r.ok('summary: Barcelona shows both dates', /7\.11 \/ 8\.11/.test(A.qq('[data-sum-item="i07"]').textContent));
   r.ok('summary: planned', sum('planned').join() === 'i02,i04,i05,i06', sum('planned'));
   r.ok('summary: optional incl. Thyssen', sum('optional').join() === 'i09,i10,i11,i11b,i12,i13', sum('optional'));

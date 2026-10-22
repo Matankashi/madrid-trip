@@ -485,7 +485,12 @@ input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var
 .sum li{display:flex;gap:10px;padding:3px 0}
 .itin-sumdate{flex:none;min-width:62px;color:var(--slate);font-size:12.5px}
 .sum-fixed{font-weight:600}
+.sum-open{grid-column:1/-1;display:flex;align-items:center;gap:8px;font-size:13.5px;padding:9px 13px;border:1px dashed var(--st);border-radius:var(--radius)}
 @media(min-width:760px){.itin-summary{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+/* לינה (פרק 04): הזמנה סגורה / עוד פתוחה, באותו צבע סטטוס כמו בלוח */
+.place.stay{border-right-color:var(--st)}
+.place.stay .pm{margin-bottom:4px}
 
 /* המטרה — בראש התיק */
 .goal{border-color:var(--green);border-right-width:5px;margin-top:22px}
