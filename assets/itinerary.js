@@ -23,7 +23,12 @@ import { doc, getDoc, runTransaction } from "https://www.gstatic.com/firebasejs/
    הזזה). altDay = תאריך חלופי לפריט שהתאריך שלו עוד לא סופי — הפריט מוצג
    בשני הימים אבל הוא פריט אחד (משחק ברצלונה: 7.11 או 8.11, לה ליגה
    קובעת כשבועיים לפני). שדות לא מוכרים (ברמה העליונה ובתוך פריט) נשמרים
-   כמות שהם, כמו תאימות הקדימה של budget.js. */
+   כמות שהם, כמו תאימות הקדימה של budget.js.
+   slot = חלק ביום (morning/noon/evening, לא חובה): בתוך יום ממיינים לפי
+   slot ואז לפי order, בלי slot בסוף. placeId = פריט שהגיע מההמלצות
+   (assets/places.js, מסמך places): השם, ההערה והקישור נקראים חיים משם,
+   ו-title נשאר עותק של השם — כך הפריט לא נעלם אם ההמלצות לא נטענו או
+   בטאב ישן. מקום אחד בכמה ימים = כמה פריטים עם אותו placeId. */
 
 const STORE_KEY = 'madrid.itinerary.v1';
 const DEBOUNCE_MS = 800;
@@ -45,6 +50,8 @@ const KIND_RULES = [
 ];
 const DESC_MAX = 600;
 const URL_MAX = 2000;
+const SLOT_HE = { morning: 'בוקר', noon: 'צהריים', evening: 'ערב' };
+const SLOT_RANK = { morning: 0, noon: 1, evening: 2 };
 
 const seedItem = (day, order, status, title, desc, extra) => Object.assign({ day: `2026-11-${day}`, order, status, title, desc, url: '' }, extra);
 const SEED = {
@@ -82,6 +89,12 @@ let dayEdit = null; // {day, vals:{title, kind}} — עורך הכרטיס (הי
 let menuFor = null;
 let confirmDel = null;
 let dragId = null;
+let placeDrag = null; // מקום שנגרר מההמלצות (places.js) אל הלוח
+/* ההמלצות (places.js) מתחברות דרך board.connect: provider = {ready, get,
+   catLabel, hasCoords, toggleBeen, openMap, reveal}. בלי provider (או לפני
+   שנטען) פריט מההמלצות מוצג לפי העותק שלו. */
+let provider = null;
+const renderListeners = [];
 
 function applyState(data){
   items = {}; days = {}; foreignTop = {};
@@ -94,23 +107,31 @@ function applyState(data){
 }
 
 function getState(){
-  return Object.assign({}, foreignTop, { items: clone(items), days: clone(days) });
+  const out = clone(items);
+  // העותק של השם מתעדכן מההמלצות בכל שמירה
+  Object.keys(out).forEach(id => { const p = placeOf(id); if (p && p.name) out[id].title = String(p.name).slice(0, TITLE_MAX); });
+  return Object.assign({}, foreignTop, { items: out, days: clone(days) });
 }
+
+const placeOf = id => (items[id] && items[id].placeId && provider ? provider.get(items[id].placeId) : null);
+const titleOf = id => { const p = placeOf(id); return String((p && p.name) || items[id].title || ''); };
+const slotOf = id => (SLOT_HE[items[id].slot] ? items[id].slot : '');
 
 function guessKind(day){
   const ids = itemsOn(day).concat(altsOn(day));
   if (!ids.length) return 'open';
-  const text = ids.map(id => `${items[id].title || ''} ${items[id].desc || ''}`).join(' ');
-  const r = KIND_RULES.find(([re]) => re.test(`${items[ids[0]].title || ''}`)) || KIND_RULES.find(([re]) => re.test(text));
+  const text = ids.map(id => `${titleOf(id)} ${items[id].desc || ''}`).join(' ');
+  const r = KIND_RULES.find(([re]) => re.test(titleOf(ids[0]))) || KIND_RULES.find(([re]) => re.test(text));
   return r ? r[1] : 'city';
 }
 const kindOf = day => (days[day] && KIND_HE[days[day].kind]) ? days[day].kind : guessKind(day);
 
 /* ---------- סדר וימים ---------- */
 const orderOf = id => Number(items[id].order) || 0;
+const slotRank = id => (slotOf(id) ? SLOT_RANK[slotOf(id)] : 3);
 function itemsOn(day){
   return Object.keys(items).filter(id => items[id].day === day)
-    .sort((a, b) => (orderOf(a) - orderOf(b)) || (a < b ? -1 : a > b ? 1 : 0));
+    .sort((a, b) => (slotRank(a) - slotRank(b)) || (orderOf(a) - orderOf(b)) || (a < b ? -1 : a > b ? 1 : 0));
 }
 function altsOn(day){
   return Object.keys(items).filter(id => items[id].altDay === day && items[id].day !== day).sort();
@@ -174,6 +195,7 @@ const ICONS = {
   masks: '<path d="M3 5h9v5a4.5 4.5 0 0 1-9 0z"/><path d="M12 9h9v5a4.5 4.5 0 0 1-9 0"/><path d="M6 12.5c1 1 2 1 3 0M15 16.5c1-1 2-1 3 0"/>',
   headphones: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>',
   search: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>',
+  pin: '<path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/>',
   // אריח הכרטיס (סוג יום)
   frame: '<rect x="3" y="4" width="18" height="16" rx="1"/><rect x="6.5" y="7.5" width="11" height="9"/><path d="M6.5 15l3.5-3.5 2.5 2.5 2-2 3 3"/>',
   train: '<rect x="5" y="3" width="14" height="13" rx="3"/><path d="M5 10h14"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M8 20l2-4M16 20l-2-4"/>',
@@ -223,10 +245,12 @@ function h(tag, attrs, ...kids){
 }
 const actBtn = (act, id, text, label, disabled) => h('button', { type: 'button', class: 'itin-btn', 'data-act': act, 'data-id': id, 'aria-label': label || false, disabled: !!disabled }, text);
 
+// נקודה = טקסט (אייקון לפי ICON_RULES) או {text, icon} עם אייקון קבוע
 function renderPoints(points){
   const ul = h('ul', { class: 'itin-points' });
-  points.forEach(p => {
-    const icon = iconFor(p);
+  points.forEach(pt => {
+    const p = typeof pt === 'string' ? pt : pt.text;
+    const icon = typeof pt === 'string' ? iconFor(p) : pt.icon;
     const li = h('li', { 'data-icon': icon || false, class: icon ? 'ic' : false });
     if (icon) { const s = h('span', { class: 'itin-ic' }); s.innerHTML = svg(ICONS[icon]); li.appendChild(s); }
     li.appendChild(withLtrNumbers(p));
@@ -237,33 +261,48 @@ function renderPoints(points){
 const badge = st => h('div', { class: 'itin-badge', title: STATUS_HE[st] }, STATUS_LABEL[st]);
 const menuBtn = (id, title, act) => h('button', { type: 'button', class: 'itin-menu', 'data-act': act || 'menu', 'data-id': id, 'aria-expanded': String(menuFor === id), 'aria-label': `פעולות: "${title}"` }, '⋯');
 
-function renderItem(id, idx, n){
+/* list = הפריטים של אותו יום בסדר התצוגה. ↑/↓ רק בתוך אותו חלק ביום —
+   ה-slot קובע את המקום, אז הזזה מעבר לגבול שלו לא הייתה נשארת. */
+function renderItem(id, list, idx){
   const it = items[id];
   const st = statusOf(id);
-  const title = String(it.title || '');
+  const title = titleOf(id);
+  const place = placeOf(id);
+  const sameSlot = j => j >= 0 && j < list.length && slotOf(list[j]) === slotOf(id);
   const dayIdx = TRIP_DAYS.indexOf(it.day);
-  const card = h('div', { class: `itin-item st-${st}`, 'data-item': id, draggable: 'true' });
+  const card = h('div', { class: `itin-item st-${st}` + (it.placeId ? ' itin-fromplace' : ''), 'data-item': id, 'data-placeid': it.placeId || false, draggable: 'true' });
   card.appendChild(menuBtn(id, title));
+  const meta = [SLOT_HE[slotOf(id)], it.placeId && place ? provider.catLabel(it.placeId) : null].filter(Boolean).join(' · ');
+  if (meta || (place && place.been)) card.appendChild(h('div', { class: 'itin-meta' }, meta, place && place.been ? h('span', { class: 'itin-been' }, '✓ היינו') : null));
   card.appendChild(h('div', { class: 'itin-title', 'data-title': id, text: title }));
-  const points = splitPoints(it.desc);
+  const points = place ? (place.hood ? [{ text: String(place.hood), icon: 'pin' }] : []).concat(splitPoints(place.note)) : splitPoints(it.desc);
   if (points.length) card.appendChild(renderPoints(points));
+  if (it.placeId && !place && provider && provider.ready()) card.appendChild(h('div', { class: 'itin-tbd itin-gone' }, 'המקום לא נמצא בהמלצות'));
   if (it.altDay) card.appendChild(h('div', { class: 'itin-tbd' }, `תאריך לא סופי: ${fmtDay(it.day)} או ${fmtDay(it.altDay)}`));
-  const href = normalizeUrl(it.url);
+  const href = normalizeUrl(place ? place.url : it.url);
   if (href) card.appendChild(h('a', { class: 'itin-link', href, target: '_blank', rel: 'noopener noreferrer' }, h('span', { class: 'rowlink-host', text: linkLabel(href) }), ' ↗'));
   card.appendChild(badge(st));
   const acts = h('div', { class: 'itin-acts', hidden: menuFor !== id });
-  if (confirmDel === id) {
+  const moves = [
+    actBtn('edit', id, 'עריכה', `עריכת "${title}"`),
+    actBtn('up', id, '↑ למעלה', `הזזת "${title}" למעלה באותו יום`, !sameSlot(idx - 1)),
+    actBtn('down', id, '↓ למטה', `הזזת "${title}" למטה באותו יום`, !sameSlot(idx + 1)),
+    actBtn('prev', id, 'ליום הקודם', `העברת "${title}" ליום הקודם`, dayIdx <= 0),
+    actBtn('next', id, 'ליום הבא', `העברת "${title}" ליום הבא`, dayIdx < 0 || dayIdx >= TRIP_DAYS.length - 1)];
+  if (it.placeId) {
+    // פריט מההמלצות: הסרה מהיום בלי אישור — המקום עצמו נשאר בהמלצות
+    acts.append(...moves.concat([
+      place && provider.hasCoords(it.placeId) ? actBtn('map', id, 'על המפה', `"${title}" על המפה`) : null,
+      place ? actBtn('been', id, place.been ? 'בטל "היינו"' : 'היינו ✓', place.been ? `ביטול הסימון "היינו" של "${title}"` : `סימון "${title}" כמקום שהיינו בו`, !provider.ready()) : null,
+      place ? actBtn('reveal', id, 'בהמלצות', `פתיחת "${title}" בהמלצות`) : null,
+      actBtn('unplace', id, 'הסר מהיום', `הסרת "${title}" מ-${fmtDay(it.day)} (נשאר בהמלצות)`)
+    ]).filter(Boolean));
+  } else if (confirmDel === id) {
     acts.appendChild(h('div', { class: 'itin-confirm' }, `למחוק את "${title}"?`,
       h('button', { type: 'button', class: 'delyes', 'data-act': 'delyes', 'data-id': id }, 'כן, למחוק'),
       h('button', { type: 'button', class: 'delno', 'data-act': 'delno', 'data-id': id }, 'לא')));
   } else {
-    acts.append(
-      actBtn('edit', id, 'עריכה', `עריכת "${title}"`),
-      actBtn('up', id, '↑ למעלה', `הזזת "${title}" למעלה באותו יום`, idx <= 0),
-      actBtn('down', id, '↓ למטה', `הזזת "${title}" למטה באותו יום`, idx >= n - 1),
-      actBtn('prev', id, 'ליום הקודם', `העברת "${title}" ליום הקודם`, dayIdx <= 0),
-      actBtn('next', id, 'ליום הבא', `העברת "${title}" ליום הבא`, dayIdx < 0 || dayIdx >= TRIP_DAYS.length - 1),
-      actBtn('del', id, 'מחיקה', `מחיקת "${title}"`));
+    acts.append(...moves, actBtn('del', id, 'מחיקה', `מחיקת "${title}"`));
   }
   card.appendChild(acts);
   return card;
@@ -295,10 +334,16 @@ function dayOptions(selected, withNone){
   return sel;
 }
 
+/* פריט מההמלצות: רק תאריך, חלק ביום וסטטוס — השם, ההערה והקישור שייכים
+   למקום ונערכים בהמלצות (אחרת עריכה ביום אחד הייתה נעלמת בשאר הימים). */
 function renderForm(){
   const v = editing.vals;
   const key = editing.isNew ? 'new' : editing.id;
+  const linked = !editing.isNew && items[editing.id] && items[editing.id].placeId;
   const field = (label, input) => h('label', { class: 'itin-field' }, h('span', {}, label), input);
+  const slot = h('select', { 'data-f': 'slot' });
+  slot.appendChild(h('option', { value: '' }, '—'));
+  Object.keys(SLOT_HE).forEach(s => slot.appendChild(h('option', { value: s, selected: s === v.slot }, SLOT_HE[s])));
   const title = h('input', { type: 'text', 'data-f': 'title', maxlength: TITLE_MAX, value: v.title });
   const desc = h('textarea', { 'data-f': 'desc', maxlength: DESC_MAX, rows: '4' }); desc.value = v.desc;
   const day = dayOptions(v.day, false); day.setAttribute('data-f', 'day');
@@ -307,10 +352,10 @@ function renderForm(){
   Object.keys(STATUS_LABEL).forEach(s => status.appendChild(h('option', { value: s, selected: s === v.status }, `${STATUS_LABEL[s]} · ${STATUS_HE[s]}`)));
   const url = h('input', { type: 'text', 'data-f': 'url', maxlength: URL_MAX, value: v.url, dir: 'ltr', inputmode: 'url', placeholder: 'https://…' });
   return h('div', { class: `itin-item itin-form st-${STATUS_LABEL[v.status] ? v.status : 'open'}`, 'data-form': key },
-    field('כותרת', title),
-    field('נקודות (מופרדות ב-" · " או שורה לכל נקודה)', desc),
-    h('div', { class: 'itin-row' }, field('תאריך', day), field('תאריך חלופי (אם לא סופי)', alt), field('סטטוס', status)),
-    field('קישור חיצוני', url),
+    linked ? h('div', { class: 'itin-title', text: titleOf(editing.id) }) : field('כותרת', title),
+    linked ? h('div', { class: 'itin-formnote' }, 'השם, ההערה והקישור נערכים בהמלצות.') : field('נקודות (מופרדות ב-" · " או שורה לכל נקודה)', desc),
+    h('div', { class: 'itin-row' }, field('תאריך', day), linked ? null : field('תאריך חלופי (אם לא סופי)', alt), field('חלק ביום', slot), field('סטטוס', status)),
+    linked ? null : field('קישור חיצוני', url),
     editing.err ? h('div', { class: 'linkerr', role: 'alert', text: editing.err }) : null,
     h('div', { class: 'itin-formacts' },
       h('button', { type: 'button', class: 'addok', 'data-act': 'save', 'data-id': key }, editing.isNew ? 'הוספה' : 'שמירה'),
@@ -338,7 +383,7 @@ function renderDay(day){
   const list = h('div', { class: 'itin-list', 'data-list': other ? 'other' : day });
   if (!other) altsOn(day).forEach(id => list.appendChild(editing && editing.id === id && editing.at === day ? renderForm() : renderAlt(id)));
   const main = other ? Object.keys(items).filter(id => !TRIP_DAYS.includes(items[id].day)).sort() : itemsOn(day);
-  main.forEach((id, i) => list.appendChild(editing && !editing.isNew && editing.id === id && editing.at === items[id].day ? renderForm() : renderItem(id, i, main.length)));
+  main.forEach((id, i) => list.appendChild(editing && !editing.isNew && editing.id === id && editing.at === items[id].day ? renderForm() : renderItem(id, main, i)));
   if (!other && editing && editing.isNew && editing.at === day) list.appendChild(renderForm());
   else if (!other) list.appendChild(h('div', { class: 'itin-add' }, h('button', { type: 'button', class: 'addrow', 'data-act': 'add', 'data-id': day, 'aria-label': `הוספת פריט ל-${fmtDay(day)}` }, '＋ פריט')));
   block.appendChild(list);
@@ -374,7 +419,7 @@ function renderSummary(){
     Object.keys(items).filter(id => statusOf(id) === st).sort(cmp).forEach(id => {
       const it = items[id];
       const when = it.altDay ? `${fmtDay(it.day)} / ${fmtDay(it.altDay)}` : fmtDay(it.day);
-      ul.appendChild(h('li', { 'data-sum-item': id }, h('span', { class: 'mono itin-sumdate', text: when }), h('span', { text: String(it.title || '') })));
+      ul.appendChild(h('li', { 'data-sum-item': id }, h('span', { class: 'mono itin-sumdate', text: when }), h('span', { text: titleOf(id) })));
     });
     if (!ul.children.length) ul.appendChild(h('li', { class: 'itin-sumempty', text: '—' }));
   });
@@ -389,6 +434,7 @@ function render(focusSel){
   renderSummary();
   const f = focusSel && root.querySelector(focusSel);
   if (f) f.focus();
+  renderListeners.forEach(cb => { try { cb(); } catch (e) { console.error('madrid-trip: itinerary render listener failed', e); } });
 }
 
 function announce(msg){
@@ -400,21 +446,24 @@ function announce(msg){
 function openEdit(id, at){
   const it = items[id];
   menuFor = null; dayEdit = null;
-  editing = { id, isNew: false, at, err: '', vals: { title: String(it.title || ''), desc: String(it.desc || ''), day: it.day, altDay: it.altDay || '', status: statusOf(id), url: String(it.url || '') } };
+  editing = { id, isNew: false, at, err: '', vals: { title: String(it.title || ''), desc: String(it.desc || ''), day: it.day, altDay: it.altDay || '', status: statusOf(id), url: String(it.url || ''), slot: slotOf(id) } };
   confirmDel = null;
-  render(`[data-form="${id}"] [data-f="title"]`);
+  render(`[data-form="${id}"] [data-f="${it.placeId ? 'day' : 'title'}"]`);
 }
 
 function saveEdit(){
   const v = editing.vals;
-  const title = v.title.trim();
-  const url = v.url.trim();
+  const linked = !editing.isNew && items[editing.id] && items[editing.id].placeId;
+  const title = linked ? titleOf(editing.id) : v.title.trim();
+  const url = linked ? '' : v.url.trim();
   const fail = msg => { editing.err = msg; render(`[data-form="${editing.isNew ? 'new' : editing.id}"] [data-f="title"]`); };
   if (!title) return fail('צריך כותרת.');
   if (url && !normalizeUrl(url)) return fail('הקישור לא תקין — רק http/https, בלי רווחים.');
   const day = v.day;
-  const altDay = v.altDay && v.altDay !== day ? v.altDay : '';
-  const fields = { title: title.slice(0, TITLE_MAX), desc: v.desc.trim().slice(0, DESC_MAX), status: STATUS_LABEL[v.status] ? v.status : 'open', url: url.slice(0, URL_MAX) };
+  if (!editing.isNew && placeClash(editing.id, day)) return fail(`המקום הזה כבר ב-${fmtDay(day)}.`);
+  const altDay = !linked && v.altDay && v.altDay !== day ? v.altDay : '';
+  const fields = linked ? { status: STATUS_LABEL[v.status] ? v.status : 'optional' }
+    : { title: title.slice(0, TITLE_MAX), desc: v.desc.trim().slice(0, DESC_MAX), status: STATUS_LABEL[v.status] ? v.status : 'open', url: url.slice(0, URL_MAX) };
   let id = editing.id;
   if (editing.isNew) {
     id = 'i_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -426,6 +475,8 @@ function saveEdit(){
     if (from !== day) { it.day = day; it.order = itemsOn(day).filter(x => x !== id).length; renumber(from); }
   }
   if (altDay) items[id].altDay = altDay; else delete items[id].altDay;
+  if (SLOT_HE[v.slot]) items[id].slot = v.slot; else delete items[id].slot;
+  renumber(items[id].day); // ה-slot יכול להזיז את הפריט בתוך היום
   editing = null;
   scheduleSave();
   render(`[data-item="${id}"] [data-act="menu"]`);
@@ -437,7 +488,7 @@ function onAct(act, id){
   const it = items[id];
   if (act === 'add') {
     dayEdit = null;
-    editing = { id: null, isNew: true, at: id, err: '', vals: { title: '', desc: '', day: id, altDay: '', status: 'planned', url: '' } };
+    editing = { id: null, isNew: true, at: id, err: '', vals: { title: '', desc: '', day: id, altDay: '', status: 'planned', url: '', slot: '' } };
     confirmDel = null;
     return render('[data-form="new"] [data-f="title"]');
   }
@@ -469,7 +520,15 @@ function onAct(act, id){
     menuFor = menuFor === k ? null : k; confirmDel = null;
     return render(menuFor ? `[data-${act === 'menu' ? 'item' : 'alt'}="${id}"] .itin-acts button` : `[data-${act === 'menu' ? 'item' : 'alt'}="${id}"] [data-act="${act}"]`);
   }
-  if (['up', 'down', 'prev', 'next', 'del'].includes(act)) menuFor = id; // גם כשהלחיצה לא הגיעה מהתפריט (מקלדת/בדיקות), הפוקוס נשאר על הפריט
+  if (['up', 'down', 'prev', 'next', 'del', 'been'].includes(act)) menuFor = id; // גם כשהלחיצה לא הגיעה מהתפריט (מקלדת/בדיקות), הפוקוס נשאר על הפריט
+  if (act === 'unplace') return removePlacement(id, true);
+  if (act === 'map') return provider && it.placeId && provider.openMap(it.placeId);
+  if (act === 'reveal') return provider && it.placeId && provider.reveal(it.placeId);
+  if (act === 'been') {
+    if (!provider || !provider.ready() || !placeOf(id)) return;
+    provider.toggleBeen(it.placeId); // כותב למסמך places בלבד, ומרנדר את הלוח מחדש
+    return render(`[data-item="${id}"] [data-act="been"]`);
+  }
   if (act === 'edit') return openEdit(id, it.day);
   if (act === 'editalt') return openEdit(id, it.altDay);
   if (act === 'del') { confirmDel = id; return render(`[data-act="delno"][data-id="${id}"]`); }
@@ -486,7 +545,7 @@ function onAct(act, id){
   if (act === 'up' || act === 'down') {
     const list = itemsOn(it.day);
     const i = list.indexOf(id), j = act === 'up' ? i - 1 : i + 1;
-    if (j < 0 || j >= list.length) return;
+    if (j < 0 || j >= list.length || slotOf(list[j]) !== slotOf(id)) return;
     moveTo(id, it.day, act === 'up' ? list[j] : list[j + 1] || null);
     scheduleSave();
     render(`[data-item="${id}"] [data-act="${act}"]:not([disabled]), [data-item="${id}"] [data-act="edit"]`);
@@ -495,12 +554,72 @@ function onAct(act, id){
   if (act === 'prev' || act === 'next') {
     const i = TRIP_DAYS.indexOf(it.day), j = act === 'prev' ? i - 1 : i + 1;
     if (i < 0 || j < 0 || j >= TRIP_DAYS.length) return;
+    if (placeClash(id, TRIP_DAYS[j])) return announce(`${titleOf(id)} כבר ב-${fmtDay(TRIP_DAYS[j])}`);
     moveTo(id, TRIP_DAYS[j], null);
     scheduleSave();
     render(`[data-item="${id}"] [data-act="${act}"]:not([disabled]), [data-item="${id}"] [data-act="edit"]`);
     return announce(`${it.title} הועבר ל-${fmtDay(TRIP_DAYS[j])}`);
   }
 }
+
+/* ---------- שיבוץ מההמלצות (places.js) ----------
+   מקום בלוח = פריט רגיל עם placeId, סטטוס optional. אותו מקום פעם אחת לכל
+   היותר בכל יום, בכמה ימים כמה שרוצים. הסרה מוחקת רק את הפריט — המקום
+   נשאר במסמך places. */
+// פריט מההמלצות לא נכנס ליום שכבר יש בו את אותו מקום
+const placeClash = (id, day) => !!items[id].placeId && itemsOn(day).some(x => x !== id && items[x].placeId === items[id].placeId);
+
+function placementsOf(pid){
+  return Object.keys(items).filter(id => items[id].placeId === pid)
+    .sort((a, b) => (items[a].day < items[b].day ? -1 : items[a].day > items[b].day ? 1 : 0))
+    .map(id => ({ id, day: items[id].day }));
+}
+
+function addPlacement(pid, day, beforeId){
+  const p = provider && provider.get(pid);
+  if (loadState !== 'ready' || !p || !TRIP_DAYS.includes(day)) return false;
+  if (itemsOn(day).some(x => items[x].placeId === pid)) { announce(`${p.name} כבר ב-${fmtDay(day)}`); return false; }
+  const id = 'i_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  items[id] = { day, order: itemsOn(day).length, title: String(p.name || '').slice(0, TITLE_MAX), desc: '', status: 'optional', url: '', placeId: pid };
+  moveTo(id, day, beforeId || null);
+  menuFor = null;
+  scheduleSave();
+  render();
+  announce(`${p.name} נוסף ל-${fmtDay(day)}`);
+  return true;
+}
+
+function removePlacement(id, fromMenu){
+  const it = items[id];
+  if (loadState !== 'ready' || !it || !it.placeId) return false;
+  const day = it.day, title = titleOf(id);
+  delete items[id];
+  if (editing && editing.id === id) editing = null;
+  menuFor = null; confirmDel = null;
+  renumber(day);
+  scheduleSave();
+  render(fromMenu ? `[data-act="add"][data-id="${day}"]` : null);
+  announce(`${title} הוסר מ-${fmtDay(day)} — נשאר בהמלצות`);
+  return true;
+}
+
+let endDrag = () => {}; // נקבע ב-wire()
+
+export { h, normalizeUrl, linkLabel, fmtDay, weekday };
+export const board = {
+  ready: () => loadState === 'ready',
+  days: () => TRIP_DAYS.slice(),
+  placements: placementsOf,
+  add: addPlacement,
+  remove: id => removePlacement(id, false),
+  // הפריט שנגרר כרגע מהלוח (כדי שההמלצות יקבלו אותו בשחרור)
+  dragging: () => (dragId && items[dragId] ? { id: dragId, placeId: items[dragId].placeId || null } : null),
+  setPlaceDrag: pid => { placeDrag = pid || null; if (!placeDrag) endDrag(); },
+  endDrag: () => endDrag(),
+  connect: p => { provider = p; },
+  onRender: cb => { renderListeners.push(cb); },
+  refresh: () => render()
+};
 
 function wire(){
   const root = $('#itin');
@@ -529,13 +648,16 @@ function wire(){
     else if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); onAct('save'); }
   });
 
-  /* גרירה (עכבר/משטח מגע). אותה פעולה בדיוק כמו הכפתורים — moveTo. */
+  /* גרירה (עכבר/משטח מגע). אותה פעולה בדיוק כמו הכפתורים — moveTo.
+     מקום מההמלצות (placeDrag, נקבע ב-places.js) נכנס ליום דרך addPlacement. */
   const line = h('div', { class: 'itin-dropline', 'aria-hidden': 'true' });
   const clearDrag = () => {
     line.remove();
     root.querySelectorAll('.dragging').forEach(x => x.classList.remove('dragging'));
     dragId = null;
+    placeDrag = null;
   };
+  endDrag = clearDrag;
   const dropTarget = (e) => {
     // כל הכרטיס הוא אזור שחרור, גם הכותרת שלו — לא רק רשימת הפריטים
     const card = e.target.closest && e.target.closest('.itin-day');
@@ -554,23 +676,25 @@ function wire(){
     e.dataTransfer.setData('text/plain', dragId);
   });
   root.addEventListener('dragover', e => {
-    if (!dragId) return;
+    if (!dragId && !placeDrag) return;
     const t = dropTarget(e);
-    if (!t) { line.remove(); return; }
+    if (!t || loadState !== 'ready') { line.remove(); return; }
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+    e.dataTransfer.dropEffect = placeDrag ? 'copy' : 'move';
     const anchor = t.before || t.list.querySelector(':scope > .itin-add, :scope > [data-form="new"]');
     if (anchor) t.list.insertBefore(line, anchor); else t.list.appendChild(line);
   });
   root.addEventListener('drop', e => {
-    if (!dragId) return;
+    if (!dragId && !placeDrag) return;
     const t = dropTarget(e);
     if (!t) return;
     e.preventDefault();
-    const id = dragId;
+    const id = dragId, pid = placeDrag;
     const beforeId = t.before ? (t.before.dataset.item || t.before.dataset.form) : null;
     clearDrag();
+    if (pid) { addPlacement(pid, t.list.dataset.list, beforeId); return; }
     if (loadState !== 'ready' || !items[id]) return;
+    if (placeClash(id, t.list.dataset.list)) return announce(`${titleOf(id)} כבר ב-${fmtDay(t.list.dataset.list)}`);
     menuFor = null;
     moveTo(id, t.list.dataset.list, beforeId);
     scheduleSave();

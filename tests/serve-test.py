@@ -16,11 +16,15 @@ Usage:  python3 tests/serve-test.py [port]      (default 8000)
 - Exposes window.__budgetIdle() (no save waiting or in flight), which
   readDoc() in tests/budget-checks.js waits on instead of a fixed sleep.
 - Does the same for dossier.html: /assets/itinerary.js -> state/itinerary_test
-  (+ __loadDoc, window.__itinIdle) and /assets/dossier.js -> state/checklist_test.
+  (+ __loadDoc, window.__itinIdle), /assets/dossier.js -> state/checklist_test,
+  and /assets/places.js -> state/places_test (+ __loadDoc on its own query
+  param, ?placesload=slow|fail, so a failed pool load leaves the board alone;
+  window.__placesIdle).
 
 Seed budget_test first (see tests/budget-checks.js), then open
 http://localhost:PORT/budget.html while signed in. Itinerary checks:
-tests/itinerary-checks.js, run from http://localhost:PORT/dossier.html.
+tests/itinerary-checks.js and tests/places-checks.js, run from
+http://localhost:PORT/dossier.html.
 """
 import http.server, os, socketserver, sys
 
@@ -49,6 +53,12 @@ REWRITES = {
         ("'madrid.itinerary.v1'", "'madrid.itinerary.test'"),
         ("getDoc(docRef).then(", "__loadDoc(docRef).then("),
     ], BUDGET_SHIM.replace("__budgetIdle", "__itinIdle")),
+    # ...the recommendations pool too, with its own ?placesload hook...
+    "/assets/places.js": ([
+        ("'state', 'places')", "'state', 'places_test')"),
+        ("'madrid.places.v1'", "'madrid.places.test'"),
+        ("getDoc(docRef).then(", "__loadDoc(docRef).then("),
+    ], BUDGET_SHIM.replace("__budgetIdle", "__placesIdle").replace("'loadtest'", "'placesload'")),
     # ...and the checklist on the same page is pointed away from the real doc too
     "/assets/dossier.js": ([
         ("'state', 'checklist')", "'state', 'checklist_test')"),

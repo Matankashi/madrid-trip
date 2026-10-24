@@ -280,7 +280,9 @@
 <section id="plan">
   <h2><span class="n">08</span>מבנה 14 הימים</h2>
 
-  <p>הלו״ז של 1–14.11, יום אחרי יום. כל פריט אפשר לערוך (כותרת, תיאור, תאריך, סטטוס, קישור), להזיז בגרירה או בכפתורים, להוסיף ולמחוק. נשמר בחשבון ומסונכרן בין מכשירים.</p>
+  <p>הלו״ז של 1–14.11, יום אחרי יום. כל פריט אפשר לערוך (כותרת, תיאור, תאריך, חלק ביום, סטטוס, קישור), להזיז בגרירה או בכפתורים, להוסיף ולמחוק. נשמר בחשבון ומסונכרן בין מכשירים.</p>
+
+  <p>ההמלצות שנאספו — בתי קפה, אוכל, פארקים — יושבות מעל הלוח. גוררים מקום ליום (או "הוסף ליום" בטלפון), ואותו מקום יכול להיות בכמה ימים. הסרה מיום לא מוחקת אותו מההמלצות.</p>
 
   <div class="itin-legend" aria-label="מקרא סטטוסים">
     <span class="st-booked"><span class="st">BOOKED</span> סגור</span>
@@ -288,6 +290,19 @@
     <span class="st-optional"><span class="st">OPTIONAL</span> אופציונלי</span>
     <span class="st-open"><span class="st">OPEN</span> פתוח</span>
   </div>
+
+  <div class="load-banner" id="placesBanner" role="status">טוען את ההמלצות…</div>
+  <div class="pool" id="places"></div>
+  <div class="sr-only" id="placesLive" aria-live="polite"></div>
+  <dialog class="pool-map" id="placesMap" aria-labelledby="placesMapTitle">
+    <div class="pool-maphead">
+      <b id="placesMapTitle"></b>
+      <span class="pool-mapnote" id="placesMapNote"></span>
+      <button type="button" class="pool-mapclose" data-mapclose aria-label="סגירת המפה">✕</button>
+    </div>
+    <div class="pool-mapstatus" id="placesMapStatus" role="status"></div>
+    <div class="pool-mapbox" id="placesMapBox" dir="ltr"></div>
+  </dialog>
 
   <div class="load-banner" id="itinBanner" role="status">טוען את הלו״ז…</div>
   <div class="itin" id="itin"></div>
@@ -330,5 +345,6 @@
 <script type="module" src="assets/auth-guard.js"></script>
 <script type="module" src="assets/dossier.js"></script>
 <script type="module" src="assets/itinerary.js"></script>
+<script type="module" src="assets/places.js"></script>
 </body>
 </html>

@@ -512,6 +512,104 @@ input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var
     grid-template-columns:repeat(7,minmax(0,1fr));
   }
 }
+/* פריט בלוח: חלק ביום / קטגוריה מעל הכותרת, "היינו" */
+.itin-meta{text-align:center;font-size:11px;color:var(--slate);padding:0 18px 2px;line-height:1.4}
+.itin-been{color:var(--green);font-weight:600;margin-right:6px}
+.itin-formnote{font-size:12px;color:var(--slate);text-align:center}
+.itin-gone{color:var(--slate)}
+
+/* ---------- מאגר ההמלצות (dossier.html #places, assets/places.js) ----------
+   סגור = שורה אחת. פתוח = שבבי קטגוריות, וקטגוריה פתוחה אחת כרשת שקטה.
+   מ-760px נדבק מתחת ל-nav בזמן גלילה בלוח, כדי שאפשר יהיה לגרור אליו
+   וממנו לכל יום; בטלפון לא נדבק ("הוסף ליום" במקום גרירה). */
+#placesBanner{margin-bottom:10px}
+.pool{margin:0 0 12px;background:var(--paper);border:1px solid var(--line);border-radius:var(--radius)}
+.pool-bar{display:flex;align-items:center;flex-wrap:wrap;gap:0 14px;padding:0 12px}
+.pool-toggle{display:flex;align-items:baseline;gap:10px;flex:1 1 auto;min-height:44px;padding:0;border:0;background:none;font-family:inherit;color:var(--ink);cursor:pointer;text-align:right}
+.pool-toggle:focus-visible{outline:2px solid var(--rojo);outline-offset:2px}
+.pool-h{font-family:var(--font-display);font-size:17px;line-height:44px}
+.pool-count{font-size:12.5px;color:var(--slate)}
+.pool-chev{font-size:11px;color:var(--slate)}
+.pool-tools{display:flex;gap:14px}
+.pool-drophint{display:none}
+.pool.dropzone{border:1.5px dashed var(--rojo)}
+.pool.dropzone .pool-drophint{display:block;flex:1 1 100%;font-size:12.5px;color:var(--rojo);padding-bottom:9px}
+.pool-body{padding:2px 12px 12px;border-top:1px solid var(--line)}
+.pool-cats{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 0 6px}
+.pool-chip{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:3px 12px;font-family:inherit;font-size:13px;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:999px;cursor:pointer}
+.pool-chip:hover,.pool-chip:focus-visible{border-color:var(--slate);outline:none}
+.pool-chip.empty{color:var(--slate)}
+.pool-chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+.pool-chipn{font-size:11px;opacity:.65}
+.pool-chipadd{border-style:dashed;color:var(--slate)}
+.pool-catform{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px}
+.pool-catform input{font-family:inherit;font-size:16px;padding:4px 8px;width:160px;border:1.5px solid var(--line);border-radius:var(--radius);background:#fff;color:var(--ink)}
+.pool-catform input:focus{outline:none;border-color:var(--rojo)}
+.pool-cat{padding-top:6px}
+.pool-cathead{display:flex;align-items:baseline;flex-wrap:wrap;gap:0 14px;padding:4px 0 6px;margin-bottom:8px;border-bottom:1px solid var(--line)}
+.pool-catname{font-family:var(--font-display);font-size:15px;margin-left:auto}
+.pool-grid{display:grid;gap:4px 14px;grid-template-columns:1fr}
+.pool-item{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 10px;padding:4px 8px;background:#fff;border:1px solid transparent;border-radius:var(--radius);cursor:grab}
+.pool-item:hover{border-color:var(--line)}
+.pool-item.open{grid-column:1/-1;border-color:var(--line);cursor:auto;padding-bottom:8px}
+.pool-item.dragging{opacity:.4}
+.pool-name{flex:1 1 auto;min-width:0;display:flex;align-items:baseline;flex-wrap:wrap;gap:0 8px;min-height:34px;padding:0;border:0;background:none;font-family:inherit;color:var(--ink);text-align:right;cursor:pointer}
+.pool-name:focus-visible{outline:2px solid var(--rojo);outline-offset:2px}
+.pool-n{font-weight:600;font-size:14px;line-height:34px}
+.pool-hood{font-size:12px;color:var(--slate)}
+.pool-marks{display:flex;gap:8px;font-size:11.5px;white-space:nowrap}
+.pool-on{color:var(--blue)}
+.pool-been{color:var(--green);font-weight:600}
+.pool-detail{flex:1 1 100%;padding:2px 0 0}
+.pool-note{font-size:13.5px;line-height:1.5;margin:0 0 4px;white-space:pre-line}
+.pool-addr{font-size:12px;color:var(--slate);margin-bottom:4px}
+.pool-acts{display:flex;flex-wrap:wrap;gap:0 14px}
+.pool-acts [aria-pressed="true"]{color:var(--green);font-weight:600;text-decoration:none}
+.pool-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;margin-top:8px;max-width:620px}
+.pool-day{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:44px;padding:2px;font-family:inherit;font-size:13px;line-height:1.2;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:var(--radius);cursor:pointer}
+.pool-day .pool-wd{font-size:10.5px;color:var(--slate)}
+.pool-day[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+.pool-day[aria-pressed="true"] .pool-wd{color:inherit;opacity:.75}
+.pool-day:disabled{opacity:.5;cursor:default}
+.pool-hint{font-size:11.5px;color:var(--slate);margin-top:4px}
+.pool-form,.pool-import{display:flex;flex-direction:column;gap:8px;padding:10px 12px;margin:10px 0 4px;background:#fff;border:1px solid var(--line);border-radius:var(--radius)}
+.pool-form > .itin-field,.pool-import > .itin-field{flex:none;max-width:320px}
+.pool-imphead{font-weight:700;font-size:14px}
+.pool-impwhich{font-size:13px;line-height:1.5;margin:0 18px 0 0}
+.pool-impwhich li{margin-bottom:3px}
+.pool-file{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--slate)}
+.pool-file input{font-family:inherit;font-size:14px;color:var(--ink)}
+.pool-impsum{font-size:13.5px}
+.pool-dups{font-size:12px;color:var(--slate)}
+.pool-dups summary{cursor:pointer}
+.pool-empty{font-size:13px;color:var(--slate);padding:4px 0;margin:0}
+.pool-block{color:var(--rojo)}
+@media(min-width:760px){
+  .pool{position:sticky;top:var(--pool-top,0);z-index:6}
+  .pool-body{max-height:min(46vh,440px);overflow:auto}
+  .pool-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(min-width:1100px){
+  .pool{
+    --bw:min(1240px,calc(100vw - 48px));
+    width:var(--bw);margin-left:calc((100% - var(--bw)) / 2);margin-right:calc((100% - var(--bw)) / 2);
+  }
+  .pool-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+/* מפה אחת, בשכבה מעל הדף (Leaflet נטען רק בפתיחה הראשונה) */
+.pool-map{width:min(920px,calc(100vw - 24px));height:min(640px,calc(100vh - 48px));margin:auto;padding:0;border:1.5px solid var(--ink);border-radius:var(--radius);background:var(--paper);color:var(--ink)}
+.pool-map[open]{display:flex;flex-direction:column}
+.pool-map::backdrop{background:color-mix(in srgb,var(--ink) 45%,transparent)}
+.pool-maphead{display:flex;align-items:center;gap:12px;padding:6px 8px 6px 14px;border-bottom:1px solid var(--line)}
+.pool-maphead b{font-family:var(--font-display);font-weight:400;font-size:17px}
+.pool-mapnote{font-size:12px;color:var(--slate);margin-left:auto}
+.pool-mapclose{flex:none;width:40px;height:40px;padding:0;border:0;background:none;font-size:16px;color:var(--slate);cursor:pointer;border-radius:var(--radius)}
+.pool-mapclose:hover,.pool-mapclose:focus-visible{color:var(--ink);background:#fff;outline:none}
+.pool-mapstatus{padding:8px 14px;font-size:13px;color:var(--slate)}
+.pool-mapbox{flex:1;min-height:0}
+.pool-pop{font-family:var(--font-body);font-size:13px;line-height:1.45;text-align:right}
+.pool-pop b{display:block;font-size:14px}
+
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
