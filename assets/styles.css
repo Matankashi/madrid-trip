@@ -580,6 +580,9 @@ input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var
 .pool-file{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--slate)}
 .pool-file input{font-family:inherit;font-size:14px;color:var(--ink)}
 .pool-impsum{font-size:13.5px}
+.pool-filter{display:flex;align-items:center;gap:8px;min-height:36px;font-size:14px;cursor:pointer;width:fit-content}
+.pool-filter input{width:18px;height:18px;margin:0;accent-color:var(--ink);cursor:pointer}
+.pool-impcount{font-size:13.5px}
 .pool-dups{font-size:12px;color:var(--slate)}
 .pool-dups summary{cursor:pointer}
 .pool-empty{font-size:13px;color:var(--slate);padding:4px 0;margin:0}

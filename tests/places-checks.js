@@ -12,6 +12,7 @@
         await t.phasePool();    // collapsed list, categories, add/edit, custom categories
         await t.phaseBoard();   // chips, drag in/out, several days, היינו, delete block, slots
         await t.phaseImport();  // file import: preview, duplicates, nothing overwritten
+        await t.phaseFilter();  // "Madrid and around" filter in the import preview
         await t.phaseMap();     // overlay map from a place / a category / a board item
         await t.phaseMobile();  // phone width: not sticky, thumb-size day chips, no h-scroll
         await t.phaseGuard();   // another device changed the pool -> refuse to save
@@ -166,6 +167,13 @@ export async function phaseParse() {
   r.ok('broken json -> clear error', /JSON/.test(err(() => t.rowsFromJson('{bad'))));
   r.ok('coords text: comma / space / junk / out of range / 0,0', !!t.parseCoords('40.4168, -3.7038') && !!t.parseCoords('40.4168 -3.7038') && !t.parseCoords('abc') && !t.parseCoords('140, 3') && !t.parseCoords('0, 0'));
   r.ok('url: %2C query / @ only / short link / broken %', t.coordsFromUrl('https://www.google.com/maps/search/?api=1&query=40.41%2C-3.70').lat === 40.41 && t.coordsFromUrl('https://www.google.com/maps/@40.43,-3.69,15z').lng === -3.69 && t.coordsFromUrl('https://maps.app.goo.gl/AbCdEf') === null && t.coordsFromUrl('https://x.com/%E0%A4%A') === null);
+  r.ok('distance: Toledo ~67 km, Segovia ~68 km, Barcelona ~500 km', Math.abs(t.distKm({ lat: 40.4168, lng: -3.7038 }, { lat: 39.8628, lng: -4.0273 }) - 67) < 5 && Math.abs(t.distKm({ lat: 40.4168, lng: -3.7038 }, { lat: 40.9429, lng: -4.1088 }) - 68) < 5 && t.distKm({ lat: 40.4168, lng: -3.7038 }, { lat: 41.3874, lng: 2.1686 }) > 450);
+  const A1 = x => t.areaOf(Object.assign({ name: '', address: '', note: '', coords: null }, x));
+  r.ok('area: coords decide (in/out), text ignored when coords exist', A1({ coords: { lat: 40.42, lng: -3.70 } }) === 'in' && A1({ coords: { lat: 36.11, lng: -115.17 }, address: 'Madrid' }) === 'out');
+  r.ok('area: no coords -> Madrid / nearby city / Hebrew in name, address or note', A1({ address: 'C. Mayor, 1, 28013 Madrid, Spain' }) === 'in' && A1({ address: 'Calle Real, Alcalá de Henares' }) === 'in' && A1({ name: 'טיול לטולדו' }) === 'in' && A1({ note: 'near Segovia aqueduct' }) === 'in');
+  r.ok('area: address elsewhere -> out; nothing to go on -> unknown', A1({ address: '3570 S Las Vegas Blvd, NV 89109' }) === 'out' && A1({ name: 'North District' }) === 'unknown' && A1({ name: 'בני דן תל אביב יפו' }) === 'unknown');
+  r.ok('area: no false hits inside other words (Pintor, Parlament)', A1({ address: 'Calle del Pintor, Valencia' }) === 'out' && A1({ address: 'Parlament de Catalunya, Barcelona' }) === 'out');
+  r.ok('json: Google\'s "No location information" comment is not kept as a note', t.rowsFromJson(JSON.stringify({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [0, 0] }, properties: { Comment: 'No location information is available for this saved place', location: { name: 'North District' } } }] }))[0].note === '');
   r.ok('name from url', t.nameFromUrl('https://www.google.com/maps/place/Caf%C3%A9+Comercial/data=x') === 'Café Comercial' && t.nameFromUrl('http://maps.google.com/?q=Mercado+de+San+Miguel') === 'Mercado de San Miguel' && t.nameFromUrl('http://maps.google.com/?q=40.1,-3.2') === '');
   return r.result();
 }
@@ -423,7 +431,9 @@ export async function phaseImport() {
   choose(A, 'Coffee Madrid.csv', csv);
   await sleep(300);
   const sum = () => (A.qq('[data-impsum]') || {}).textContent || '';
-  r.ok('preview: 4 rows, 2 new, 2 already there, 1 of 2 with location', /4 שורות/.test(sum()) && /2 חדשים/.test(sum()) && /2 כבר במאגר/.test(sum()) && /1 מתוך 2 עם מיקום/.test(sum()), sum());
+  const cnt = () => (A.qq('[data-impcount]') || {}).textContent || '';
+  r.ok('preview: 4 rows, 2 new, 2 already there', /4 שורות: 2 חדשים/.test(sum()) && /2 כבר במאגר/.test(sum()), sum());
+  r.ok('preview: both kept (a Madrid list), 1 with location', /נשמרים 2 \(1 עם מיקום\)/.test(cnt()) && /מסוננים 0/.test(cnt()), cnt());
   r.ok('category guessed from the file name (קפה)', A.qq('[data-pimport="cat"]').value === 'cafe');
   const before = await read(pRef());
   r.ok('nothing written before confirming', canonJson(before) === canonJson(FIXTURE()));
@@ -442,7 +452,7 @@ export async function phaseImport() {
     { type: 'Feature', geometry: { type: 'Point', coordinates: [-3.6946, 40.4080] }, properties: { google_maps_url: 'http://maps.google.com/?cid=2', location: { name: 'Museo Reina Sofía', address: 'C. de Sta. Isabel, 52, Madrid' } } }
   ] }));
   await sleep(300);
-  r.ok('json preview: 2 new, 2 of 2 with location', /2 חדשים/.test(sum()) && /2 מתוך 2 עם מיקום/.test(sum()), sum());
+  r.ok('json preview: 2 new, both in Madrid with location', /2 חדשים/.test(sum()) && /נשמרים 2 \(2 עם מיקום\)/.test(cnt()), [sum(), cnt()]);
   A.qq('[data-pimport="cat"]').value = 'museums';
   A.qq('[data-pimport="cat"]').dispatchEvent(new A.w.Event('change', { bubbles: true }));
   pact(A, 'impok', '');
@@ -454,7 +464,64 @@ export async function phaseImport() {
   pact(A, 'import', '');
   choose(A, 'Saved Places.json', JSON.stringify({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [-3.6921, 40.4138] }, properties: { google_maps_url: 'http://maps.google.com/?cid=1', location: { name: 'Museo del Prado' } } }] }));
   await sleep(300);
-  r.ok('importing again: 0 new, nothing to confirm', /0 חדשים/.test(sum()) && !A.qq('[data-pact="impok"]'));
+  r.ok('importing again: 0 new, nothing to confirm', /0 חדשים/.test(sum()) && !A.qq('[data-pact="impok"]') && !A.qq('[data-pimport="filter"]'));
+  pact(A, 'impcancel', '');
+  return finish(r, realBefore);
+}
+
+/* ---------- 4b. the "Madrid and around" import filter ---------- */
+export async function phaseFilter() {
+  await guard();
+  const r = reporter();
+  const realBefore = await realSnap();
+  await fresh();
+  const A = await open();
+  pact(A, 'toggle', '');
+  pact(A, 'import', '');
+  const cnt = () => (A.qq('[data-impcount]') || {}).textContent || '';
+  const filterBox = () => A.qq('[data-pimport="filter"]');
+  const NOLOC = 'No location information is available for this saved place';
+  const feat = (name, coords, address, comment) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: coords || [0, 0] }, properties: Object.assign({ google_maps_url: 'http://maps.google.com/?cid=' + encodeURIComponent(name), location: Object.assign({ name }, address ? { address } : {}) }, comment ? { Comment: comment } : {}) });
+  // the shapes from the real export: far places with coords, nameless-ish ones without, an address in Madrid without coords
+  const json = JSON.stringify({ type: 'FeatureCollection', features: [
+    feat('Museo del Prado', [-3.6921, 40.4138], 'C. de Ruiz de Alarcón, 23, 28014 Madrid, Spain'),
+    feat('Catedral de Toledo', [-4.0237, 39.8569], 'C. Cardenal Cisneros, 1, 45002 Toledo, Spain'),
+    feat('Sagrada Família', [2.1744, 41.4036], 'C/ de Mallorca, 401, 08013 Barcelona, Spain'),
+    feat('Caesars Palace', [-115.176141, 36.117261], '3570 S Las Vegas Blvd, Paradise, NV 89109, United States'),
+    feat('Casa Labra', null, 'C. de Tetuán, 12, 28013 Madrid, Spain'),
+    feat('Le Comptoir', null, '9 Carrefour de l\'Odéon, 75006 Paris, France'),
+    feat('North District', null, null, NOLOC),
+    feat('בני דן תל אביב יפו', null, null, NOLOC)
+  ] });
+  choose(A, 'Saved Places.json', json);
+  await sleep(300);
+  r.ok('filter shown and on by default', filterBox() && filterBox().checked);
+  r.ok('kept 3 (Prado, Toledo, Casa Labra), 2 with location', /נשמרים 3 \(2 עם מיקום\)/.test(cnt()), cnt());
+  r.ok('filtered 5: 3 outside the area, 2 with nothing to go on', /מסוננים 5 \(3 מחוץ לאזור, 2 בלי מיקום או כתובת\)/.test(cnt()), cnt());
+  const outList = (A.qq('[data-impout] div') || {}).textContent || '';
+  r.ok('"מה סונן" lists them', ['Sagrada Família', 'Caesars Palace', 'Le Comptoir', 'North District', 'בני דן תל אביב יפו'].every(n => outList.includes(n)) && !outList.includes('Prado'), outList);
+  r.ok('import button counts only what is kept', /ייבוא 3/.test(A.qq('[data-pact="impok"]').textContent));
+  filterBox().click();
+  r.ok('filter off: all 8 kept, "בלי סינון"', !filterBox().checked && /נשמרים 8 \(4 עם מיקום\)/.test(cnt()) && /בלי סינון/.test(cnt()) && /ייבוא 8/.test(A.qq('[data-pact="impok"]').textContent), cnt());
+  filterBox().click();
+  r.ok('back on: 3 again', /נשמרים 3/.test(cnt()));
+  r.ok('nothing written during the preview', canonJson(await read(pRef())) === canonJson(FIXTURE()));
+  pact(A, 'impok', '');
+  await waitIdle(A);
+  let d = await docWhen(pRef(), x => Object.values(x.places).filter(p => p.source === 'takeout-json').length === 3);
+  const got = d ? Object.values(d.places).filter(p => p.source === 'takeout-json').map(p => p.name).sort() : [];
+  r.ok('only the 3 Madrid-area places were saved', got.join() === 'Casa Labra,Catedral de Toledo,Museo del Prado', got);
+  // the saved list "madrid": no coords, no addresses -> kept because the list is Madrid's
+  pact(A, 'import', '');
+  choose(A, 'madrid.csv', 'Title,Note,URL,Tags,Comment\nCafé de Oriente,,https://www.google.com/maps/place/Cafe+de+Oriente/data=!4m2!3m1!1s0xd4228:0x10,,\nLa Venencia,jerez,https://www.google.com/maps/place/La+Venencia/data=!4m2!3m1!1s0xd4228:0x11,,\nEl Rastro,domingo,,,\n');
+  await sleep(300);
+  r.ok('madrid.csv: all 3 kept, 0 filtered, note about keeping them', /נשמרים 3 \(0 עם מיקום\)/.test(cnt()) && /מסוננים 0/.test(cnt()) && /נשמרו כי זו רשימה של מדריד/.test(A.qq('[data-import]').textContent), cnt());
+  pact(A, 'impcancel', '');
+  // the same rows in a list that is not called madrid -> filtered as unknown unless the text says Madrid
+  pact(A, 'import', '');
+  choose(A, 'Want to go.csv', 'Title,Note,URL\nCafé de Oriente,,\nTemplo de Debod,mirador Madrid,\n');
+  await sleep(300);
+  r.ok('other list: only the row that mentions Madrid is kept', /נשמרים 1/.test(cnt()) && /מסוננים 1/.test(cnt()), cnt());
   pact(A, 'impcancel', '');
   return finish(r, realBefore);
 }

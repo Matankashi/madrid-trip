@@ -212,11 +212,13 @@ function rowsFromJson(text){
       name: String(loc.name || loc['Business Name'] || pr.Title || pr.name || '').trim(),
       address: String(loc.address || loc.Address || pr.address || '').trim(),
       url,
-      note: String(pr.Comment || pr.comment || '').trim(),
+      note: NO_LOCATION_NOTE.test(String(pr.Comment || pr.comment || '')) ? '' : String(pr.Comment || pr.comment || '').trim(),
       coords
     };
   });
 }
+// מה ש-Takeout כותב ב-Comment של מקום בכוכב שאין לו מיקום — לא הערה של המשתמש
+const NO_LOCATION_NOTE = /^\s*No location information is available for this saved place\.?\s*$/i;
 const nameKey = s => String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 function urlKey(u){
   const s = String(u || '').trim();
@@ -228,6 +230,41 @@ function urlKey(u){
   return 'u:' + s.toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '');
 }
 const keysOf = p => [p.url ? urlKey(p.url) : '', 'n:' + nameKey(p.name)].filter(k => k && k !== 'n:');
+
+/* ---------- סינון "מדריד והסביבה" בייבוא ----------
+   Saved Places.json מביא כל מה שסומן בכוכב בעולם, אז בתצוגה המקדימה יש
+   מסנן, דלוק כברירת מחדל:
+   - יש קואורדינטות → בפנים אם עד AREA_KM מהמרכז (קו אווירי), אחרת בחוץ.
+   - אין → לפי השם/הכתובת/ההערה: מזכירים את מדריד או עיר קרובה → בפנים;
+     יש כתובת שלא מזכירה אף אחת → בחוץ.
+   - בלי מיקום ובלי כתובת, והשם לא מזכיר עיר קרובה → אי אפשר לדעת: נשמר
+     רק כשהרשימה עצמה היא של מדריד (שם הקובץ, למשל Saved/madrid.csv —
+     ברשימה כזו לרוב אין כתובות בכלל), אחרת מסונן.
+   אף פעם לא geocoding. אפשר לכבות את המסנן ולייבא הכול. */
+const MADRID = { lat: 40.4168, lng: -3.7038 };
+const AREA_KM = 100;
+const NEAR_LATIN = ['madrid', 'toledo', 'segovia', 'alcala de henares', 'aranjuez', 'el escorial', 'escorial', 'avila', 'guadalajara', 'chinchon',
+  'getafe', 'leganes', 'mostoles', 'alcorcon', 'fuenlabrada', 'pozuelo de alarcon', 'majadahonda', 'las rozas', 'boadilla del monte', 'alcobendas',
+  'san sebastian de los reyes', 'tres cantos', 'torrejon de ardoz', 'coslada', 'colmenar viejo', 'valdemoro', 'pinto', 'parla',
+  'rivas-vaciamadrid', 'arganda del rey', 'navacerrada', 'cercedilla', 'rascafria', 'manzanares el real', 'villaviciosa de odon'];
+const NEAR_HE = ['מדריד', 'טולדו', 'סגוביה', 'אלקלה', 'ארנחואס', 'אסקוריאל', 'אווילה', 'גוודלחרה'];
+const NEAR_RE = new RegExp('(^|[^a-z])(' + NEAR_LATIN.map(w => w.replace(/[-]/g, '[- ]')).join('|') + ')($|[^a-z])');
+const fold = t => String(t || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+function distKm(a, b){
+  const r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLng = (b.lng - a.lng) * r;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(x));
+}
+const mentionsNear = text => NEAR_RE.test(fold(text)) || NEAR_HE.some(w => String(text || '').includes(w));
+// 'in' / 'out' / 'unknown' (אין מיקום ואין כתובת להכריע לפיה)
+function areaOf(r){
+  if (r.coords) return distKm(r.coords, MADRID) <= AREA_KM ? 'in' : 'out';
+  if (mentionsNear([r.name, r.address, r.note].join(' '))) return 'in';
+  return r.address ? 'out' : 'unknown';
+}
+const keeps = (imp, r) => r.area === 'in' || (r.area === 'unknown' && imp.listIsMadrid);
+// מה שייכנס בפועל: הכול כשהמסנן כבוי
+const chosen = imp => (imp.filter ? imp.fresh.filter(r => keeps(imp, r)) : imp.fresh);
 
 function prepareImport(fileName, text){
   const isJson = /\.(geo)?json$/i.test(fileName) || /^\s*[[{]/.test(String(text).replace(/^﻿/, ''));
@@ -242,10 +279,12 @@ function prepareImport(fileName, text){
     const ks = keysOf(rec);
     if (ks.some(k => seen.has(k))) { dupNames.push(name); return; }
     ks.forEach(k => seen.add(k));
+    rec.area = areaOf(rec);
     fresh.push(rec);
   });
   const base = String(fileName || '').replace(/\.[^.]+$/, '');
-  return { file: fileName, kind: isJson ? 'json' : 'csv', total: raw.length, fresh, dupNames, skipped, withCoords: fresh.filter(r => r.coords).length, cat: guessCat(base), err: '' };
+  const listIsMadrid = /madrid|מדריד/i.test(fold(base));
+  return { file: fileName, kind: isJson ? 'json' : 'csv', total: raw.length, fresh, dupNames, skipped, filter: true, listIsMadrid, cat: guessCat(base), err: '' };
 }
 
 /* ---------- תצוגה ---------- */
@@ -283,22 +322,37 @@ function renderImport(){
   if (!imp.fresh) {
     box.appendChild(h('label', { class: 'pool-file' }, h('span', {}, 'בחרו קובץ ‎.csv או ‎.json'), h('input', { type: 'file', accept: '.csv,.json,.geojson,text/csv,application/json', 'data-pimport': 'file' })));
   } else {
-    const n = imp.fresh.length;
+    const all = imp.fresh.length;
+    const keep = chosen(imp);
+    const out = imp.fresh.filter(r => !keeps(imp, r));
+    const n = keep.length, withC = keep.filter(r => r.coords).length;
     const sel = h('select', { 'data-pimport': 'cat' });
     catIds().forEach(k => sel.appendChild(h('option', { value: k, selected: k === imp.cat }, catLabel(k))));
     box.appendChild(h('div', { class: 'pool-impsum', 'data-impsum': '' },
       h('span', { class: 'mono', text: imp.file }), ' · ',
-      `${imp.total} שורות: `, h('b', {}, `${n} חדשים`),
+      `${imp.total} שורות: ${all} חדשים`,
       imp.dupNames.length ? ` · ${imp.dupNames.length} כבר במאגר (לא נוגעים בהם)` : '',
-      imp.skipped ? ` · ${imp.skipped} בלי שם (מדלגים)` : '',
-      ` · ${imp.withCoords} מתוך ${n} עם מיקום`));
-    if (n && !imp.withCoords && imp.kind === 'csv') box.appendChild(h('div', { class: 'pool-hint' }, 'לאף מקום בקובץ הזה אין מיקום, כך שלא יהיה להם כפתור מפה. בשביל מפה — Saved Places.json.'));
+      imp.skipped ? ` · ${imp.skipped} בלי שם (מדלגים)` : ''));
+    if (all) {
+      box.appendChild(h('label', { class: 'pool-filter' },
+        h('input', { type: 'checkbox', 'data-pimport': 'filter', checked: imp.filter }),
+        h('span', {}, `רק מדריד והסביבה (עד כ-${AREA_KM} ק״מ)`)));
+      const far = out.filter(r => r.area === 'out').length, unknown = out.filter(r => r.area === 'unknown').length;
+      const keptUnknown = imp.filter ? keep.filter(r => r.area === 'unknown').length : 0;
+      box.appendChild(h('div', { class: 'pool-impcount', 'data-impcount': '' },
+        h('b', {}, `נשמרים ${n}`), ` (${withC} עם מיקום)`,
+        imp.filter ? ` · מסוננים ${out.length}` : ' · בלי סינון',
+        imp.filter && out.length ? ` (${[far ? `${far} מחוץ לאזור` : '', unknown ? `${unknown} בלי מיקום או כתובת` : ''].filter(Boolean).join(', ')})` : ''));
+      if (keptUnknown) box.appendChild(h('div', { class: 'pool-hint' }, `${keptUnknown} בלי מיקום וכתובת נשמרו כי זו רשימה של מדריד.`));
+      if (imp.filter && out.length) box.appendChild(h('details', { class: 'pool-dups', 'data-impout': '' }, h('summary', {}, 'מה סונן'), h('div', { text: out.map(r => r.name).join(' · ') })));
+    }
+    if (n && !withC && imp.kind === 'csv') box.appendChild(h('div', { class: 'pool-hint' }, 'לאף מקום שנשמר אין מיקום, כך שלא יהיה להם כפתור מפה. בשביל מפה — Saved Places.json.'));
     if (imp.dupNames.length) box.appendChild(h('details', { class: 'pool-dups' }, h('summary', {}, 'מה כבר קיים'), h('div', { text: imp.dupNames.join(' · ') })));
     if (n) box.appendChild(h('label', { class: 'itin-field' }, h('span', {}, 'לאיזו קטגוריה'), sel));
   }
   if (imp.err) box.appendChild(h('div', { class: 'linkerr', role: 'alert', text: imp.err }));
   box.appendChild(h('div', { class: 'itin-formacts' },
-    imp.fresh && imp.fresh.length ? h('button', { type: 'button', class: 'addok', 'data-pact': 'impok', 'data-id': '' }, `ייבוא ${imp.fresh.length}`) : null,
+    imp.fresh && chosen(imp).length ? h('button', { type: 'button', class: 'addok', 'data-pact': 'impok', 'data-id': '' }, `ייבוא ${chosen(imp).length}`) : null,
     h('button', { type: 'button', class: 'addcancel', 'data-pact': 'impcancel', 'data-id': '' }, imp.fresh ? 'ביטול' : 'סגירה')));
   return box;
 }
@@ -519,17 +573,18 @@ function saveCatForm(){
 }
 
 function doImport(){
-  if (!imp || !imp.fresh || !imp.fresh.length) return;
-  if (Object.keys(places).length + imp.fresh.length > POOL_MAX) { imp.err = `יותר מדי מקומות — המאגר מוגבל ל-${POOL_MAX}.`; return render('[data-pact="impcancel"]'); }
+  const rows = imp && imp.fresh ? chosen(imp) : [];
+  if (!rows.length) return;
+  if (Object.keys(places).length + rows.length > POOL_MAX) { imp.err = `יותר מדי מקומות — המאגר מוגבל ל-${POOL_MAX}.`; return render('[data-pact="impcancel"]'); }
   const cat = BUILTIN[imp.cat] || cats[imp.cat] ? imp.cat : 'other';
   const now = Date.now();
-  imp.fresh.forEach((r, i) => {
+  rows.forEach((r, i) => {
     const entry = { name: r.name, cat, hood: '', note: r.note, url: r.url, createdAt: now + i, source: imp.kind === 'json' ? 'takeout-json' : 'takeout-csv' };
     if (r.address) entry.address = r.address;
     if (r.coords) { entry.lat = r.coords.lat; entry.lng = r.coords.lng; }
     places[newId('p_', i)] = entry;
   });
-  const n = imp.fresh.length;
+  const n = rows.length;
   imp = null; openCat = cat; expanded = null;
   scheduleSave();
   board.refresh();
@@ -702,6 +757,12 @@ function wire(){
     if (c && catForm) catForm.vals[c.dataset.cf] = c.value;
     if (e.target.dataset.pimport === 'cat' && imp) imp.cat = e.target.value;
   };
+  // מתג הסינון משנה את התצוגה המקדימה מיד (שום דבר לא נכתב עד "ייבוא")
+  root.addEventListener('change', e => {
+    if (e.target.dataset.pimport !== 'filter' || !imp || !imp.fresh) return;
+    imp.filter = e.target.checked;
+    render('[data-pimport="filter"]');
+  });
   root.addEventListener('input', keep);
   root.addEventListener('change', e => {
     keep(e);
@@ -711,7 +772,7 @@ function wire(){
       if (!imp) return;
       try { imp = prepareImport(file.name, text); }
       catch (err) { console.error('madrid-trip: import parse failed', err); imp = { err: err.message || 'הקובץ לא נקרא.' }; }
-      render(imp.fresh && imp.fresh.length ? '[data-pact="impok"]' : '[data-pact="impcancel"]');
+      render(imp.fresh && chosen(imp).length ? '[data-pact="impok"]' : '[data-pact="impcancel"]');
     }, err => {
       console.error('madrid-trip: import read failed', err);
       imp = { err: 'הקובץ לא נקרא.' };
@@ -892,4 +953,4 @@ onAuthStateChanged(auth, function(user){
 });
 
 // לבדיקות בלבד (tests/places-checks.js): הפענוח של הייבוא בלי קובץ אמיתי
-export const __test = { parseCsv, rowsFromCsv, rowsFromJson, coordsFromUrl, parseCoords, nameFromUrl, prepareImport };
+export const __test = { parseCsv, rowsFromCsv, rowsFromJson, coordsFromUrl, parseCoords, nameFromUrl, prepareImport, areaOf, distKm };
