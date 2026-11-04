@@ -20,6 +20,8 @@ Usage:  python3 tests/serve-test.py [port]      (default 8000)
   and /assets/places.js -> state/places_test (+ __loadDoc on its own query
   param, ?placesload=slow|fail, so a failed pool load leaves the board alone;
   window.__placesIdle).
+- Pins the clock of /assets/night.js to noon (day colours), unless the page has
+  ?hour=21 or a test sets window.__nightHour.
 
 Seed budget_test first (see tests/budget-checks.js), then open
 http://localhost:PORT/budget.html while signed in. Itinerary checks:
@@ -64,6 +66,16 @@ REWRITES = {
         ("'state', 'checklist')", "'state', 'checklist_test')"),
         ("'madrid.checklist.v1'", "'madrid.checklist.test'"),
     ], ""),
+    # night mode reads a test clock, so the colour assertions in the suites give
+    # the same answer whatever the real time is (see tests/night-checks.js)
+    "/assets/night.js": ([
+        ("new Date().getHours()", "__testHour()"),
+    ], """
+function __testHour(){
+  const at = window.__nightHour !== undefined ? window.__nightHour : new URLSearchParams(location.search).get('hour');
+  return at === null ? 12 : Number(at);
+}
+"""),
 }
 
 class Handler(http.server.SimpleHTTPRequestHandler):

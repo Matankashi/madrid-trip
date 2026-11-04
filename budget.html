@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Suez+One&family=Assistant:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="assets/night.js"></script>
 <link rel="stylesheet" href="assets/styles.css">
 </head>
 <body class="p-budget" style="visibility:hidden">
@@ -49,7 +50,7 @@
     <div class="g"><label for="nights">לילות לינה</label><input type="number" id="nights" class="mini" value="11" min="1" max="60"></div>
   </div>
 
-  <h2><span class="dot" style="background:#0F1E38"></span>הגעה<span class="pct" data-pct="arrive"></span></h2>
+  <h2><span class="dot" style="background:var(--ink)"></span>הגעה<span class="pct" data-pct="arrive"></span></h2>
   <div class="rows">
     <div class="row" data-item="flight">
       <button class="lockbtn" data-lockbtn="flight" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
@@ -75,7 +76,7 @@
     </div>
   </div>
 
-  <h2><span class="dot" style="background:#C4262E"></span>לינה<span class="pct" data-pct="stay"></span></h2>
+  <h2><span class="dot" style="background:var(--rojo)"></span>לינה<span class="pct" data-pct="stay"></span></h2>
   <div class="rows">
     <div class="row" data-item="nightly">
       <button class="lockbtn" data-lockbtn="nightly" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
@@ -90,7 +91,7 @@
     </div>
   </div>
 
-  <h2><span class="dot" style="background:#C9962C"></span>אוכל ושתייה<span class="pct" data-pct="food"></span></h2>
+  <h2><span class="dot" style="background:var(--gold)"></span>אוכל ושתייה<span class="pct" data-pct="food"></span></h2>
   <div class="rows">
     <div class="row" data-item="daily">
       <button class="lockbtn" data-lockbtn="daily" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
@@ -105,7 +106,7 @@
     </div>
   </div>
 
-  <h2><span class="dot" style="background:#2F6F4E"></span>כדורגל<span class="pct" data-pct="ball"></span></h2>
+  <h2><span class="dot" style="background:var(--green)"></span>כדורגל<span class="pct" data-pct="ball"></span></h2>
   <div class="rows">
     <div class="row" data-item="barca">
       <button class="lockbtn" data-lockbtn="barca" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
@@ -144,7 +145,7 @@
     </div>
   </div>
 
-  <h2><span class="dot" style="background:#5B6472"></span>תחבורה ותקשורת<span class="pct" data-pct="metro"></span></h2>
+  <h2><span class="dot" style="background:var(--slate)"></span>תחבורה ותקשורת<span class="pct" data-pct="metro"></span></h2>
   <div class="rows">
     <div class="row" data-item="metro">
       <button class="lockbtn" data-lockbtn="metro" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
@@ -159,7 +160,7 @@
     </div>
   </div>
 
-  <h2><span class="dot" style="background:#8C3B4A"></span>טיולים ואטרקציות<span class="pct" data-pct="trips"></span></h2>
+  <h2><span class="dot" style="background:var(--plum)"></span>טיולים ואטרקציות<span class="pct" data-pct="trips"></span></h2>
   <div class="rows">
     <div class="row" data-item="trip">
       <button class="lockbtn" data-lockbtn="trip" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>
@@ -187,11 +188,11 @@
     </div>
   </div>
 
-  <h2><span class="dot" style="background:#7A5C99"></span>ציוד לפני הטיול<span class="pct" data-pct="pre"></span></h2>
+  <h2><span class="dot" style="background:var(--purple)"></span>ציוד לפני הטיול<span class="pct" data-pct="pre"></span></h2>
   <div class="rows">
   </div>
 
-  <h2><span class="dot" style="background:#A9A497"></span>שונות ורזרבה<span class="pct" data-pct="misc"></span></h2>
+  <h2><span class="dot" style="background:var(--sand)"></span>שונות ורזרבה<span class="pct" data-pct="misc"></span></h2>
   <div class="rows">
     <div class="row" data-item="misc">
       <button class="lockbtn" data-lockbtn="misc" aria-pressed="false" aria-label="נעילת תשלום" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg></button>

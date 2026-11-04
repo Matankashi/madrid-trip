@@ -126,14 +126,14 @@ let customValues = {};
 let customCurrencies = {};
 let showTierRefs = true; // מתג גלוי/מוסתר לשורת הייחוס בכל שורה, נשמר ל-Firestore
 const GROUPS = [
-  {key:'arrive', label:'הגעה',    color:'#0F1E38', items:['flight','airport']},
-  {key:'stay',   label:'לינה',    color:'#C4262E', items:['nightly']},
-  {key:'food',   label:'אוכל',    color:'#C9962C', items:['daily']},
-  {key:'ball',   label:'כדורגל',  color:'#2F6F4E', items:['barca','ucl','tour']},
-  {key:'metro',  label:'תחבורה ותקשורת',color:'#5B6472', items:['metro']},
-  {key:'trips',  label:'טיולים ואטרקציות',color:'#8C3B4A',items:['trip','museums']},
-  {key:'pre',    label:'ציוד לפני הטיול',color:'#7A5C99',items:[]},
-  {key:'misc',   label:'רזרבה',   color:'#A9A497', items:['misc']}
+  {key:'arrive', label:'הגעה',    color:'var(--ink)', items:['flight','airport']},
+  {key:'stay',   label:'לינה',    color:'var(--rojo)', items:['nightly']},
+  {key:'food',   label:'אוכל',    color:'var(--gold)', items:['daily']},
+  {key:'ball',   label:'כדורגל',  color:'var(--green)', items:['barca','ucl','tour']},
+  {key:'metro',  label:'תחבורה ותקשורת',color:'var(--slate)', items:['metro']},
+  {key:'trips',  label:'טיולים ואטרקציות',color:'var(--plum)',items:['trip','museums']},
+  {key:'pre',    label:'ציוד לפני הטיול',color:'var(--purple)',items:[]},
+  {key:'misc',   label:'רזרבה',   color:'var(--sand)', items:['misc']}
 ];
 const groupItems = g => g.items.concat(userRowIds().filter(id => userRows[id].group === g.key));
 const toggles = {ucl:true, tour:false, trip:true};
