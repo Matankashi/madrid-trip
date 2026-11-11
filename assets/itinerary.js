@@ -32,7 +32,16 @@ import { doc, getDoc, runTransaction } from "https://www.gstatic.com/firebasejs/
 
 const STORE_KEY = 'madrid.itinerary.v1';
 const DEBOUNCE_MS = 800;
-const TRIP_DAYS = Array.from({ length: 14 }, (_, i) => `2026-11-${String(i + 1).padStart(2, '0')}`);
+const TRIP_DAYS = Array.from({ length: 30 }, (_, i) => `2026-11-${String(i + 1).padStart(2, '0')}`);
+/* שני חלקים בלוח: חלק א׳ 1–14.11, חלק ב׳ 15–30.11. אותם כרטיסים בדיוק, עם
+   אותן יכולות; ההבדל הוא רק בתצוגה: כותרת לכל חלק, וגוון אחר לכרטיסים של
+   החלק השני (.after). */
+const HOLIDAY_LAST = '2026-11-14';
+const isAfter = day => TRIP_DAYS.includes(day) && day > HOLIDAY_LAST;
+const PARTS = [
+  { from: '2026-11-01', after: false, label: 'חלק א׳', range: '1–14.11' },
+  { from: '2026-11-15', after: true, label: 'חלק ב׳', range: '15–30.11' }
+];
 const WEEKDAYS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
 const STATUS_LABEL = { booked: 'BOOKED', planned: 'PLANNED', optional: 'OPTIONAL', open: 'OPEN' };
 const STATUS_HE = { booked: 'סגור', planned: 'מתוכנן', optional: 'אופציונלי', open: 'פתוח' };
@@ -176,7 +185,7 @@ function normalizeUrl(raw){
 }
 const linkLabel = href => { try { return new URL(href).hostname.replace(/^www\./, ''); } catch (e) { return 'קישור'; } };
 
-/* ---------- תצוגה: לוח של 14 כרטיסי יום ----------
+/* ---------- תצוגה: לוח של 30 כרטיסי יום, בשני חלקים ----------
    כל כרטיס = יום (תאריך, יום בשבוע), ובתוכו הפריטים של אותו יום: כותרת,
    רשימת נקודות, תג סטטוס בתחתית. התיאור מתפצל לנקודות לפי " · " או שורה
    חדשה; נקודה שמתאימה לאחד מ-ICON_RULES מקבלת אייקון במקום תבליט. */
@@ -328,9 +337,13 @@ function renderAlt(id){
 function dayOptions(selected, withNone){
   const sel = h('select', {});
   if (withNone) sel.appendChild(h('option', { value: '' }, '— אין, התאריך סופי —'));
-  const days = TRIP_DAYS.slice();
-  if (selected && !days.includes(selected)) days.push(selected);
-  days.forEach(d => sel.appendChild(h('option', { value: d, selected: d === selected }, TRIP_DAYS.includes(d) ? `${fmtDay(d)} · ${weekday(d)}` : fmtDay(d))));
+  const opt = d => h('option', { value: d, selected: d === selected }, TRIP_DAYS.includes(d) ? `${fmtDay(d)} · ${weekday(d)}` : fmtDay(d));
+  PARTS.forEach(p => {
+    const g = h('optgroup', { label: `${p.label} · \u2066${p.range}\u2069` }); // טווח מבודד LTR, אחרת מתהפך
+    TRIP_DAYS.filter(d => isAfter(d) === p.after).forEach(d => g.appendChild(opt(d)));
+    sel.appendChild(g);
+  });
+  if (selected && !TRIP_DAYS.includes(selected)) sel.appendChild(opt(selected));
   return sel;
 }
 
@@ -365,7 +378,7 @@ function renderForm(){
 function renderDay(day){
   const other = day === null;
   const editingHere = editing && (other ? !TRIP_DAYS.includes(editing.at) : editing.at === day);
-  const block = h('div', { class: 'itin-day' + (editingHere ? ' editing' : ''), 'data-day': other ? 'other' : day });
+  const block = h('div', { class: 'itin-day' + (isAfter(day) ? ' after' : '') + (editingHere ? ' editing' : ''), 'data-day': other ? 'other' : day });
   const head = h('div', { class: 'itin-head' },
     h('span', { class: 'mono itin-date' }, other ? '—' : fmtDay(day)),
     h('span', { class: 'itin-wd' }, other ? 'תאריך מחוץ לטווח הטיול' : weekday(day)));
@@ -407,7 +420,7 @@ function renderDayForm(day){
 
 /* סיכום מתחת ללוח, נגזר מהפריטים בלבד (אין עותק שני לערוך): סגור /
    מתוכנן / אופציונלי, כל פריט "תאריך · כותרת" לפי סדר הימים. השורה של
-   הלינה (Onefam 1–8.11, ו-8–14.11 שעוד פתוח) קבועות ב-HTML — הן לא
+   הלינה (Onefam 1–8.11, 8–14.11 סגור, 15–30.11 פתוח) קבועות ב-HTML — הן לא
    פעילות ולא פריטים בלוח. */
 function renderSummary(){
   const order = id => [TRIP_DAYS.indexOf(items[id].day), orderOf(id), id];
@@ -425,11 +438,23 @@ function renderSummary(){
   });
 }
 
+/* כותרת חלק: שורה שלמה ברשת, לא אזור שחרור (אין לה data-day) */
+function renderPart(p){
+  return h('div', { class: 'itin-part' + (p.after ? ' after' : ''), 'data-part': p.from, role: 'heading', 'aria-level': '3' },
+    h('span', { class: 'itin-part-h', text: p.label }),
+    h('span', { class: 'itin-part-sep', 'aria-hidden': 'true', text: '·' }),
+    h('span', { class: 'mono itin-part-range', text: p.range }));
+}
+
 function render(focusSel){
   const root = $('#itin');
   if (!root) return;
   root.textContent = '';
-  TRIP_DAYS.forEach(d => root.appendChild(renderDay(d)));
+  TRIP_DAYS.forEach(d => {
+    const part = PARTS.find(p => p.from === d);
+    if (part) root.appendChild(renderPart(part));
+    root.appendChild(renderDay(d));
+  });
   if (Object.keys(items).some(id => !TRIP_DAYS.includes(items[id].day))) root.appendChild(renderDay(null));
   renderSummary();
   const f = focusSel && root.querySelector(focusSel);
@@ -609,6 +634,7 @@ export { h, normalizeUrl, linkLabel, fmtDay, weekday };
 export const board = {
   ready: () => loadState === 'ready',
   days: () => TRIP_DAYS.slice(),
+  isAfter: day => isAfter(day),
   placements: placementsOf,
   add: addPlacement,
   remove: id => removePlacement(id, false),

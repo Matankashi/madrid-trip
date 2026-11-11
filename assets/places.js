@@ -375,11 +375,14 @@ function renderDetail(id, on){
   if (chipsFor === id) {
     const onDays = on.map(x => x.day);
     const chips = h('div', { class: 'pool-days', role: 'group', 'aria-label': `ימים עבור "${name}"` });
-    board.days().forEach(day => chips.appendChild(h('button', {
-      type: 'button', class: 'pool-day', 'data-pact': 'day', 'data-id': id, 'data-day': day,
+    board.days().forEach((day, i, all) => {
+      if (i && board.isAfter(day) && !board.isAfter(all[i - 1])) chips.appendChild(h('span', { class: 'pool-daypart', 'aria-hidden': 'true' }, 'חלק ב׳ · ', h('span', { class: 'mono', text: '15–30.11' })));
+      chips.appendChild(h('button', {
+      type: 'button', class: 'pool-day' + (board.isAfter(day) ? ' after' : ''), 'data-pact': 'day', 'data-id': id, 'data-day': day,
       'aria-pressed': String(onDays.includes(day)), disabled: !board.ready(),
       'aria-label': `${fmtDay(day)} ${weekday(day)}${onDays.includes(day) ? ' (משובץ — לחיצה מסירה)' : ''}`
-    }, h('span', { class: 'mono', text: fmtDay(day) }), h('span', { class: 'pool-wd', text: weekday(day).replace('יום ', '') }))));
+    }, h('span', { class: 'mono', text: fmtDay(day) }), h('span', { class: 'pool-wd', text: weekday(day).replace('יום ', '') })));
+    });
     d.appendChild(chips);
     d.appendChild(h('div', { class: 'pool-hint' }, 'לחיצה על יום מוסיפה אותו ללוח, לחיצה נוספת מסירה. אפשר כמה ימים.'));
   }

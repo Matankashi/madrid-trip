@@ -286,7 +286,12 @@ export async function phaseBoard() {
   const A = await open();
   expand(A, 'cafe', 'p_hola');
   pact(A, 'chips', 'p_hola');
-  r.ok('"הוסף ליום" opens 14 day chips', A.qa('[data-place="p_hola"] .pool-day').length === 14);
+  const dayChips = A.qa('[data-place="p_hola"] .pool-day');
+  r.ok('"הוסף ליום" opens 30 day chips, 15–30.11 marked as the second part', dayChips.length === 30 && dayChips.filter(c => c.classList.contains('after')).map(c => c.dataset.day).join() === Array.from({ length: 16 }, (_, i) => D(15 + i)).join() && A.qa('[data-place="p_hola"] .pool-daypart').length === 1 && A.qq('[data-place="p_hola"] .pool-daypart').nextElementSibling.dataset.day === D(15));
+  pact(A, 'day', 'p_hola', D(27));
+  r.ok('chip in the second part -> placed on 27.11', linkedOn(A, D(27), 'p_hola').length === 1);
+  pact(A, 'day', 'p_hola', D(27));
+  r.ok('tap again removes it from 27.11', linkedOn(A, D(27), 'p_hola').length === 0);
   pact(A, 'day', 'p_hola', D(3));
   pact(A, 'day', 'p_hola', D(9));
   r.ok('chip -> placed on 3.11 and 9.11', linkedOn(A, D(3), 'p_hola').length === 1 && linkedOn(A, D(9), 'p_hola').length === 1);
@@ -571,7 +576,7 @@ export async function phaseMobile() {
   expand(M, 'cafe', 'p_hola');
   pact(M, 'chips', 'p_hola');
   const chips = M.qa('[data-place="p_hola"] .pool-day');
-  r.ok('phone: 14 day chips, each >= 40px tall and >= 36px wide', chips.length === 14 && chips.every(c => c.getBoundingClientRect().height >= 40 && c.getBoundingClientRect().width >= 36), chips.map(c => Math.round(c.getBoundingClientRect().width)));
+  r.ok('phone: 30 day chips, each >= 40px tall and >= 36px wide', chips.length === 30 && chips.every(c => c.getBoundingClientRect().height >= 40 && c.getBoundingClientRect().width >= 36), chips.map(c => Math.round(c.getBoundingClientRect().width)));
   r.ok('phone: no horizontal page scroll with the pool open', M.w.document.documentElement.scrollWidth <= M.w.innerWidth, [M.w.document.documentElement.scrollWidth, M.w.innerWidth]);
   pact(M, 'day', 'p_hola', D(2));
   r.ok('phone: tap places it', linkedOn(M, D(2), 'p_hola').length === 1);

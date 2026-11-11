@@ -418,7 +418,8 @@ input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var
 .linkbtn:hover{border-color:var(--ink);color:var(--ink)}
 
 /* ---------- לו"ז הימים (dossier.html #plan, assets/itinerary.js) ----------
-   לוח של 14 כרטיסי יום: 7 בשורה בדסקטופ (יוצא מרוחב הטקסט של התיק,
+   לוח של 30 כרטיסי יום בשני חלקים (חלק א׳ 1–14.11, חלק ב׳ 15–30.11,
+   כותרת .itin-part לכל חלק): 7 בשורה בדסקטופ (יוצא מרוחב הטקסט של התיק,
    עד 1240px), 4 בטאבלט, 2 ואז אחד מתחת לשני בטלפון. RTL — 1.11 מימין.
    צבע לכל סטטוס דרך --st, מהפלטה ב-:root בלבד. */
 .st-booked{--st:var(--green)}
@@ -440,6 +441,18 @@ input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var
   background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:10px 9px 9px;
 }
 .itin-day.editing,.itin-day[data-day="other"]{grid-column:1/-1}
+/* שני חלקים: כותרת לכל חלק לרוחב כל הרשת; כרטיסי החלק השני (.after) בצבע
+   הנייר עם מסגרת מקווקוות — אותה פלטה, טון "עוד לא סגור" */
+.itin-part{
+  grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;
+  padding:2px 2px 5px;border-bottom:2px solid var(--ink);
+}
+.itin-part.after{margin-top:18px;border-bottom-style:dashed}
+.itin-part-h{font-family:var(--font-display);font-size:18px;line-height:1.2;color:var(--ink)}
+.itin-part-range{font-size:13px;font-weight:600;color:var(--ink)}
+.itin-part-sep{color:var(--slate)}
+.itin-day.after{background:var(--paper);border-style:dashed;border-color:var(--sand)}
+.itin-day.after .itin-head{border-bottom-style:dashed}
 .itin-head{text-align:center;padding-bottom:7px;margin-bottom:8px;border-bottom:1px solid var(--line)}
 .itin-date{display:block;font-size:19px;font-weight:600;line-height:1.2;color:var(--ink)}
 .itin-wd{display:block;font-size:12px;color:var(--slate)}
@@ -463,6 +476,11 @@ input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var
   background:
     repeating-linear-gradient(135deg,transparent 0 10px,color-mix(in srgb,var(--kind) 7%,transparent) 10px 20px),
     color-mix(in srgb,var(--kind) 15%,var(--surface));
+}
+.itin-day.after .itin-tile{
+  background:
+    repeating-linear-gradient(135deg,transparent 0 10px,color-mix(in srgb,var(--kind) 6%,transparent) 10px 20px),
+    color-mix(in srgb,var(--kind) 10%,var(--paper));
 }
 .itin-daytitle{font-family:var(--font-display);font-size:16px;line-height:1.25;text-align:center;margin:0 0 8px}
 .itin-dayform{display:flex;flex-direction:column;gap:8px;margin:0 0 10px;padding-bottom:10px;border-bottom:1px solid var(--line)}
@@ -602,8 +620,10 @@ input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var
 .pool-acts [aria-pressed="true"]{color:var(--green);font-weight:600;text-decoration:none}
 .pool-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;margin-top:8px;max-width:620px}
 .pool-day{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:44px;padding:2px;font-family:inherit;font-size:13px;line-height:1.2;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);cursor:pointer}
+.pool-day.after{background:var(--paper);border-style:dashed;border-color:var(--sand)}
+.pool-daypart{grid-column:1/-1;font-size:11.5px;color:var(--slate);margin-top:4px}
 .pool-day .pool-wd{font-size:10.5px;color:var(--slate)}
-.pool-day[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--on-ink)}
+.pool-day[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);border-style:solid;color:var(--on-ink)}
 .pool-day[aria-pressed="true"] .pool-wd{color:inherit;opacity:.75}
 .pool-day:disabled{opacity:.5;cursor:default}
 .pool-hint{font-size:11.5px;color:var(--slate);margin-top:4px}

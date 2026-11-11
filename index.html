@@ -22,11 +22,11 @@
     <div class="stub-body">
       <div class="eyebrow">MADRID · NOV 2026 · SOLO</div>
       <h1>מדריד, נובמבר 2026</h1>
-      <div class="sub">14 יום סביב אתלטיקו–ברצלונה, ובסיס להישאר בספרד אחריו</div>
+      <div class="sub">סביב אתלטיקו–ברצלונה, ובסיס להישאר בספרד אחריו</div>
 
       <div class="countdown">
-        <div class="cd">ימים עד המשחק<b id="cdDays">—</b></div>
-        <div class="cd">תאריכי הטיול<b>1–14.11</b></div>
+        <div class="cd">ימים במדריד<b id="cdDays">—</b></div>
+        <div class="cd">תאריכי הטיול<b>1–30.11</b></div>
         <div class="cd">תקציב מאוזן<b>€2,870</b></div>
       </div>
 
@@ -55,12 +55,12 @@
 </div>
 <script>
 (function(){
-  // 8.11.2026, 21:00 שעון מדריד (CET = UTC+1)
-  const KICKOFF = new Date(Date.UTC(2026, 10, 8, 20, 0, 0));
+  // ימים במדריד: יום הנחיתה (1.11) הוא יום 1, לפי התאריך במכשיר
   const el = document.getElementById('cdDays');
-  const diff = KICKOFF - new Date();
-  const days = Math.ceil(diff / 86400000);
-  el.textContent = diff > 0 ? days : 'עבר';
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const day = Math.floor((today - Date.UTC(2026, 10, 1)) / 86400000) + 1;
+  el.textContent = day >= 1 ? day : '—';
 })();
 </script>
 <script type="module" src="assets/auth-guard.js"></script>
