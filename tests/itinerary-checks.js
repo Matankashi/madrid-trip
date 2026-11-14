@@ -11,7 +11,12 @@
         await t.phaseGuard();    // another tab/device changed the doc -> refuse to save
         await t.phaseLoad();     // slow/failed load, local fallback, unknown fields kept
         await t.phaseChecklist(); // the 3 remaining tasks keep their marks (checklist_test)
+        await t.phaseCollapse(); // blocks of 4: default by date, toggle, remember, drag onto collapsed
         await t.dropTestDoc();   // deletes itinerary_test + the local test copy
+   The board's collapse state lives in localStorage (madrid.itinerary.view.test
+   under serve-test.py). open() opens every block first unless told otherwise,
+   so the layout/drag checks see all 30 cards; "today" is pinned to 14.11
+   (?today=YYYY-MM-DD overrides).
    Every phase returns {passed, failed, failures:[...]} and checks at the end
    that the real state/itinerary doc is byte-identical to before (read only).
    The automation tab is often hidden (throttled timers): start a phase with
@@ -26,6 +31,19 @@ const MSG_CONFLICT = 'השתנה במכשיר אחר — רענן';
 const canonJson = o => JSON.stringify(o, (k, v) => (v && typeof v === 'object' && !Array.isArray(v)) ? Object.fromEntries(Object.keys(v).sort().map(x => [x, v[x]])) : v);
 const isInert = el => !!el && !!el.closest('[inert]');
 const D = n => `2026-11-${String(n).padStart(2, '0')}`;
+const VIEW_KEY = 'madrid.itinerary.view.test';
+const BLOCK_IDS = [1, 5, 9, 13, 15, 19, 23, 27].map(D);
+// view: 'all' = every block open, 'none' = all collapsed, null = leave what is stored (or nothing = default)
+function setView(view) {
+  if (view === null) return;
+  if (view === 'clear') { localStorage.removeItem(VIEW_KEY); return; }
+  localStorage.setItem(VIEW_KEY, JSON.stringify({ open: Object.fromEntries(BLOCK_IDS.map(b => [b, view === 'all'])) }));
+}
+const storedView = () => { try { return (JSON.parse(localStorage.getItem(VIEW_KEY)) || {}).open || {}; } catch (e) { return {}; } };
+// the cards are what goes read-only now (headers + compact lines stay usable)
+const cardsInert = p => { const b = p.qa('#itin [data-bbody]'); return b.length > 0 && b.every(isInert); };
+const cardsFree = p => p.qa('#itin [data-bbody]').every(x => !isInert(x));
+const openBlocks = p => p.qa('#itin [data-block]').filter(b => !b.querySelector('[data-bbody]').hidden).map(b => b.dataset.block);
 
 async function guard() {
   const src = await (await fetch('/assets/itinerary.js', { cache: 'no-store' })).text();
@@ -57,7 +75,8 @@ function openFrame(query, width = 1300) {
   });
 }
 // a page handle: waits until the load settled (banner hidden, or a failed/conflict message)
-async function open(query = '', wait = true, width) {
+async function open(query = '', wait = true, width, view = 'all') {
+  setView(view);
   const f = await openFrame(query, width);
   const w = f.contentWindow, qq = s => w.document.querySelector(s), qa = s => [...w.document.querySelectorAll(s)];
   const p = { f, w, qq, qa };
@@ -111,13 +130,13 @@ export async function phaseMain() {
 
   // 1. first load, no doc: the seed itinerary, read straight from code
   const A = await open();
-  r.ok('loads ready', A.qq('#itinBanner').hidden && !isInert(A.qq('#itin')), A.qq('#itinBanner').textContent);
+  r.ok('loads ready', A.qq('#itinBanner').hidden && cardsFree(A), A.qq('#itinBanner').textContent);
   r.ok('30 day blocks, 1.11 to 30.11', A.qa('.itin-day').length === 30 && A.qq('.itin-day .itin-date').textContent === '1.11' && A.qa('.itin-date').pop().textContent === '30.11');
   r.ok('14 items (Thyssen on 11.11) + one alt occurrence', A.qa('[data-item]').length === 14 && mainIds(A, D(11)).join() === 'i11,i11b' && A.qq('[data-item="i11b"]').classList.contains('st-optional') && A.qa('[data-alt]').length === 1);
   r.ok('weekday: 1.11 Sunday, 14.11 Saturday, 30.11 Monday', A.qq('.itin-wd').textContent === 'יום א׳' && A.qq(`[data-day="${D(14)}"] .itin-wd`).textContent === 'יום ש׳' && A.qa('.itin-wd').pop().textContent === 'יום ב׳');
   // two parts: 1–14.11 the holiday, 15–30.11 what comes after
   const parts = A.qa('#itin > .itin-part');
-  r.ok('parts: two headings, right before 1.11 and 15.11', parts.length === 2 && parts[0].nextElementSibling.dataset.day === D(1) && parts[1].nextElementSibling.dataset.day === D(15) && parts[1].previousElementSibling.dataset.day === D(14) && /^חלק א׳/.test(parts[0].textContent) && /1–14\.11/.test(parts[0].textContent) && /^חלק ב׳/.test(parts[1].textContent) && /15–30\.11/.test(parts[1].textContent) && !/Workaway|החופשה/.test(parts[0].textContent + parts[1].textContent));
+  r.ok('parts: two headings, right before 1.11 and 15.11', parts.length === 2 && parts[0].nextElementSibling.dataset.block === D(1) && parts[1].nextElementSibling.dataset.block === D(15) && parts[1].previousElementSibling.dataset.block === D(13) && A.qa(`[data-block="${D(13)}"] .itin-day`).pop().dataset.day === D(14) && /^חלק א׳/.test(parts[0].textContent) && /1–14\.11/.test(parts[0].textContent) && /^חלק ב׳/.test(parts[1].textContent) && /15–30\.11/.test(parts[1].textContent) && !/Workaway|החופשה/.test(parts[0].textContent + parts[1].textContent));
   r.ok('parts: headings span the whole row and are not drop targets', parts.every(p => !p.dataset.day && Math.abs(p.getBoundingClientRect().width - A.qq('#itin').getBoundingClientRect().width) < 2));
   const after = A.qa('.itin-day.after').map(e => e.dataset.day);
   r.ok('parts: exactly 15–30.11 marked as the second part', after.length === 16 && after[0] === D(15) && after[15] === D(30));
@@ -139,16 +158,16 @@ export async function phaseMain() {
   r.ok('bullets + icons: Prado II', icons('i06').join() === '•,•,•,clock,masks', icons('i06'));
   r.ok('bullets + icons: Reina Sofía music, Techno headphones, Open day', icons('i11').join() === '•,•,note' && icons('i13').join() === 'headphones' && icons('i14').join() === 'cup,search,plane', [icons('i11'), icons('i13'), icons('i14')]);
   r.ok('8.11 card: "or match day", match if not on 7.11, free time', /או יום משחק/.test(A.qq('[data-alt="i07"] .itin-title').textContent) && A.qa('[data-alt="i07"] .itin-points li').map(li => li.textContent).join('|') === 'יום משחק (אם לא ב-7.11)|זמן חופשי');
-  // layout: 7 across on desktop, wider than the text column — the holiday is
-  // 2 full rows of 7, the second part (16 days) starts its own row: 7, 7, 2
+  // layout: blocks of 4 per part, 4 across on desktop, wider than the text
+  // column — 1–4, 5–8, 9–12, 13–14 | 15–18 … 27–30
   const tops = P => [...new Set(P.qa('.itin-day').map(d => Math.round(d.getBoundingClientRect().top)))];
   const firstRow = P => P.qa('.itin-day').filter(d => Math.round(d.getBoundingClientRect().top) === tops(P)[0]).length;
   const perRow = P => tops(P).map(t => P.qa('.itin-day').filter(d => Math.round(d.getBoundingClientRect().top) === t).length);
-  r.ok('desktop: rows of 7 — 7,7 then 7,7,2', perRow(A).join() === '7,7,7,7,2' && Math.round(A.qq(`[data-day="${D(15)}"]`).getBoundingClientRect().top) > Math.round(A.qq('#itin > .itin-part.after').getBoundingClientRect().bottom) - 1, perRow(A));
+  r.ok('desktop: blocks of 4 — 4,4,4,2 then 4,4,4,4', perRow(A).join() === '4,4,4,2,4,4,4,4' && Math.round(A.qq(`[data-day="${D(15)}"]`).getBoundingClientRect().top) > Math.round(A.qq('#itin > .itin-part.after').getBoundingClientRect().bottom) - 1, perRow(A));
   r.ok('desktop: board breaks out of the 780px text column', A.qq('#itin').getBoundingClientRect().width > 1100, A.qq('#itin').getBoundingClientRect().width);
-  r.ok('desktop: RTL — 1.11 is the right-most card', A.qq('[data-day="2026-11-01"]').getBoundingClientRect().right > A.qq('[data-day="2026-11-07"]').getBoundingClientRect().right);
+  r.ok('desktop: RTL — 1.11 is the right-most card', A.qq('[data-day="2026-11-01"]').getBoundingClientRect().right > A.qq('[data-day="2026-11-04"]').getBoundingClientRect().right);
   r.ok('desktop: no horizontal page scroll', A.w.document.documentElement.scrollWidth <= A.w.innerWidth);
-  const badgesRow = A.qa('.itin-day').slice(0, 7).map(d => Math.round(d.querySelector('.itin-badge').getBoundingClientRect().bottom));
+  const badgesRow = A.qa('.itin-day').slice(0, 4).map(d => Math.round(d.querySelector('.itin-badge').getBoundingClientRect().bottom));
   r.ok('desktop: badges line up along the bottom of a row', Math.max(...badgesRow) - Math.min(...badgesRow) <= 2, badgesRow);
   r.ok('actions menu closed by default', A.qa('[data-item] .itin-acts').every(x => x.hidden) && A.qq('[data-act="menu"][data-id="i01"]').getAttribute('aria-expanded') === 'false');
   act(A, 'menu', 'i01');
@@ -186,7 +205,7 @@ export async function phaseMain() {
   setF(A, 'title', 'בדיקה: רטירו'); setF(A, 'desc', 'תיאור בדיקה'); setF(A, 'status', 'optional'); setF(A, 'url', 'example.com/x');
   act(A, 'save', 'i02');
   r.ok('saved card shows the new values', titleOf(A, 'i02') === 'בדיקה: רטירו' && A.qq('[data-item="i02"]').classList.contains('st-optional') && A.qq('[data-item="i02"] .itin-badge').textContent === 'OPTIONAL' && A.qq('[data-item="i02"] .itin-points li').textContent === 'תיאור בדיקה' && A.qq('[data-item="i02"] .itin-link').href === 'https://example.com/x' && A.qq('[data-item="i02"] .itin-link').target === '_blank');
-  r.ok('after saving, the card is back in the grid', A.qq(`[data-day="${D(2)}"]`).getBoundingClientRect().width < 300);
+  r.ok('after saving, the card is back in the grid', A.qq(`[data-day="${D(2)}"]`).getBoundingClientRect().width < 400);
   let d = await docWhen(x => x.items.i02.title === 'בדיקה: רטירו');
   r.ok('summary follows the edit (PLANNED -> OPTIONAL)', sum('planned').join() === 'i04,i05,i06' && sum('optional')[0] === 'i02');
   r.ok('edit persisted', d && d.items.i02.desc === 'תיאור בדיקה' && d.items.i02.status === 'optional' && d.items.i02.url === 'example.com/x' && d.items.i02.day === D(2), d && d.items.i02);
@@ -324,8 +343,8 @@ export async function phaseGuard() {
   const r = reporter();
   const realBefore = await realSnap();
   await fresh();
-  const conflicted = p => !p.qq('#itinBanner').hidden && p.qq('#itinBanner').textContent === MSG_CONFLICT && isInert(p.qq('#itin'));
-  const clean = p => p.qq('#itinBanner').hidden && !isInert(p.qq('#itin'));
+  const conflicted = p => !p.qq('#itinBanner').hidden && p.qq('#itinBanner').textContent === MSG_CONFLICT && cardsInert(p);
+  const clean = p => p.qq('#itinBanner').hidden && cardsFree(p);
 
   // one tab: saves in a row (including while one is in flight) never self-conflict
   const A = await open();
@@ -378,12 +397,12 @@ export async function phaseLoad() {
   await setDoc(ref(), base);
   localStorage.removeItem(LOCAL_KEY);
   let P = await open('loadtest=slow', false);
-  r.ok('slow: inert with a loading notice', isInert(P.qq('#itin')) && !P.qq('#itinBanner').hidden && /טוען/.test(P.qq('#itinBanner').textContent));
+  r.ok('slow: cards inert with a loading notice', cardsInert(P) && !P.qq('#itinBanner').hidden && /טוען/.test(P.qq('#itinBanner').textContent));
   act(P, 'next', 'i01'); act(P, 'del', 'i02');
   for (let i = 0; i < 40 && !settled(P); i++) await sleep(200);
   await sleep(1200);
   r.ok('slow: pre-load clicks wrote nothing', canonJson((await getDoc(ref())).data()) === canonJson(base) && localStorage.getItem(LOCAL_KEY) === null);
-  r.ok('slow: then shows the doc', titleOf(P, 'i01') === 'מהשרת' && P.qa('[data-item]').length === 1 && !isInert(P.qq('#itin')));
+  r.ok('slow: then shows the doc', titleOf(P, 'i01') === 'מהשרת' && P.qa('[data-item]').length === 1 && cardsFree(P));
   // unknown fields survive a save
   act(P, 'edit', 'i01'); setF(P, 'desc', 'נוסף'); act(P, 'save', 'i01');
   let d = await docWhen(x => x.items.i01.desc === 'נוסף');
@@ -394,7 +413,7 @@ export async function phaseLoad() {
   await setDoc(ref(), base);
   localStorage.setItem(LOCAL_KEY, JSON.stringify(localCopy));
   P = await open('loadtest=fail');
-  r.ok('fail: local copy shown read-only', titleOf(P, 'i01') === 'מקומי' && isInert(P.qq('#itin')) && /העותק האחרון/.test(P.qq('#itinBanner').textContent));
+  r.ok('fail: local copy shown read-only', titleOf(P, 'i01') === 'מקומי' && cardsInert(P) && /העותק האחרון/.test(P.qq('#itinBanner').textContent));
   act(P, 'next', 'i01'); act(P, 'edit', 'i01'); await sleep(1500);
   r.ok('fail: clicks write nothing (doc + local)', canonJson((await getDoc(ref())).data()) === canonJson(base) && localStorage.getItem(LOCAL_KEY) === JSON.stringify(localCopy));
   P.f.remove();
@@ -402,14 +421,14 @@ export async function phaseLoad() {
   // failed load, no local copy: the original itinerary, read-only
   localStorage.removeItem(LOCAL_KEY);
   P = await open('loadtest=fail');
-  r.ok('fail, no local: seed shown read-only', P.qa('[data-item]').length === 14 && isInert(P.qq('#itin')) && /אין עותק שמור/.test(P.qq('#itinBanner').textContent));
+  r.ok('fail, no local: seed shown read-only', P.qa('[data-item]').length === 14 && cardsInert(P) && /אין עותק שמור/.test(P.qq('#itinBanner').textContent));
   P.f.remove();
 
   // no doc yet + a local copy (e.g. edited offline before the first save): local wins
   await deleteDoc(ref());
   localStorage.setItem(LOCAL_KEY, JSON.stringify(localCopy));
   P = await open();
-  r.ok('no doc: local copy loaded, editable', titleOf(P, 'i01') === 'מקומי' && !isInert(P.qq('#itin')));
+  r.ok('no doc: local copy loaded, editable', titleOf(P, 'i01') === 'מקומי' && cardsFree(P));
   await sleep(1500);
   r.ok('no doc: nothing written until an edit', !(await getDoc(ref())).exists());
   P.f.remove();
@@ -444,6 +463,139 @@ export async function phaseChecklist() {
   await deleteDoc(cref);
   localStorage.removeItem('madrid.checklist.test');
   r.ok('real checklist doc untouched', canonJson((await getDoc(realC)).data() || null) === realBefore);
+  return r.result();
+}
+
+/* Blocks of 4 (per part), collapsed lines, the default by date, what is
+   remembered on this device, expand/collapse all, drag onto collapsed days,
+   and that none of it is data (nothing reaches Firestore by itself). */
+export async function phaseCollapse() {
+  await guard();
+  const r = reporter();
+  const realBefore = await realSnap();
+  await fresh();
+  const head = (p, b) => p.qq(`#itin [data-bhead="${b}"]`);
+  const line = (p, day) => p.qq(`#itin [data-cday="${day}"]`);
+
+  // 1. default, nothing stored: only the block with today (14.11) is open
+  let A = await open('', true, 1300, 'clear');
+  r.ok('8 blocks: 1–4, 5–8, 9–12, 13–14 | 15–18 … 27–30', A.qa('#itin [data-block]').map(b => b.dataset.block).join() === BLOCK_IDS.join() && A.qa(`[data-block="${D(13)}"] .itin-day`).length === 2 && A.qa(`[data-block="${D(27)}"] .itin-day`).length === 4);
+  r.ok('headers: range + days + items', /^13–14\.11/.test(head(A, D(13)).textContent) && /2 ימים · 2 פריטים/.test(head(A, D(13)).textContent) && /4 ימים · אין פריטים/.test(head(A, D(15)).textContent), head(A, D(13)).textContent);
+  r.ok('default: only 13–14 (today) open, past blocks collapsed', openBlocks(A).join() === D(13) && head(A, D(13)).getAttribute('aria-expanded') === 'true' && head(A, D(1)).getAttribute('aria-expanded') === 'false');
+  r.ok('today\'s block says so', /היום/.test(head(A, D(13)).textContent) && !/היום/.test(head(A, D(1)).textContent));
+  r.ok('collapsed block: one line per day instead of the cards', A.qa(`[data-compact="${D(1)}"] [data-cday]`).length === 4 && A.qq(`[data-bbody="${D(1)}"]`).hidden && A.qq(`[data-compact="${D(13)}"]`).hidden);
+  r.ok('part divider still between 14.11 and 15.11', A.qq('#itin > .itin-part.after').previousElementSibling.dataset.block === D(13) && A.qq('#itin > .itin-part.after').nextElementSibling.dataset.block === D(15));
+  const dots = day => [...line(A, day).querySelectorAll('.itin-cdot')];
+  r.ok('line 3.11: date, weekday, title, count, one green dot', line(A, D(3)).querySelector('.itin-cdate').textContent === '3.11' && line(A, D(3)).querySelector('.itin-cwd').textContent === 'ג׳' && line(A, D(3)).querySelector('.itin-ctitle').textContent === 'אתלטיקו–באיירן' && line(A, D(3)).querySelector('.itin-ccount').textContent === '1' && dots(D(3)).length === 1 && A.w.getComputedStyle(dots(D(3))[0]).backgroundColor === 'rgb(47, 111, 78)');
+  r.ok('line 11.11: two items, two gold dots', line(A, D(11)).querySelector('.itin-ccount').textContent === '2' && dots(D(11)).length === 2 && dots(D(11)).every(x => x.dataset.st === 'optional'));
+  r.ok('line 8.11: the Barcelona alt counted, hollow dot', dots(D(8)).length === 1 && dots(D(8))[0].classList.contains('alt'));
+  r.ok('empty day: "אין פריטים", no count, no dots', line(A, D(16)).querySelector('.itin-ctitle').textContent === 'אין פריטים' && !line(A, D(16)).querySelector('.itin-ccount') && !line(A, D(16)).querySelector('.itin-cdots'));
+  r.ok('line carries the day-type colour and the part-2 tone', A.w.getComputedStyle(line(A, D(3))).borderRightColor === 'rgb(196, 38, 46)' && line(A, D(16)).classList.contains('after') && A.w.getComputedStyle(line(A, D(16))).borderTopStyle === 'dashed');
+  r.ok('line is labelled for screen readers', /^3\.11, יום ג׳: אתלטיקו–באיירן · פריט אחד \(1 סגור\)/.test(line(A, D(3)).getAttribute('aria-label')), line(A, D(3)).getAttribute('aria-label'));
+  r.ok('desktop: collapsed lines 4 across, 48px tall', [...new Set(A.qa(`[data-compact="${D(1)}"] [data-cday]`).map(x => Math.round(x.getBoundingClientRect().top)))].length === 1 && A.qa('#itin [data-cday]').filter(x => x.offsetParent).every(x => x.getBoundingClientRect().height >= 44));
+  r.ok('nothing stored until you choose', !localStorage.getItem(VIEW_KEY));
+
+  // 2. one click toggles, remembered on this device
+  head(A, D(1)).click();
+  r.ok('click opens 1–4.11', openBlocks(A).join() === `${D(1)},${D(13)}` && head(A, D(1)).getAttribute('aria-expanded') === 'true' && A.qq(`[data-compact="${D(1)}"]`).hidden);
+  head(A, D(13)).click();
+  r.ok('click collapses today\'s block too', openBlocks(A).join() === D(1));
+  r.ok('stored: only what was clicked', canonJson(storedView()) === canonJson({ [D(1)]: true, [D(13)]: false }), storedView());
+  A.f.remove();
+  A = await open('', true, 1300, null);
+  r.ok('reload: same blocks open and closed', openBlocks(A).join() === D(1));
+  A.f.remove();
+  A = await open('today=2026-11-20', true, 1300, null);
+  r.ok('next week: the new today block opens, the stored choices stay', openBlocks(A).join() === `${D(1)},${D(19)}`);
+  A.f.remove();
+
+  // 3. default by date
+  for (const [today, want] of [['2026-11-20', D(19)], ['2026-11-30', D(27)], ['2026-11-01', D(1)], ['2026-10-20', D(1)], ['2026-12-05', '']]) {
+    const P = await open(`today=${today}`, true, 1300, 'clear');
+    r.ok(`default on ${today}: ${want || 'nothing'} open`, openBlocks(P).join() === want, openBlocks(P));
+    P.f.remove();
+  }
+
+  // 4. expand all / collapse all, the line opens its block
+  A = await open('', true, 1300, 'clear');
+  A.qq('#itin [data-bact="all"][data-id="open"]').click();
+  r.ok('expand all: 8 open, all 30 cards visible', openBlocks(A).length === 8 && A.qa('.itin-day').every(d => d.offsetParent) && Object.values(storedView()).filter(Boolean).length === 8);
+  A.qq('#itin [data-bact="all"][data-id="close"]').click();
+  r.ok('collapse all: none open (today\'s too), 30 lines', openBlocks(A).length === 0 && A.qa('#itin [data-cday]').filter(x => x.offsetParent).length === 30 && Object.values(storedView()).every(v => v === false));
+  line(A, D(10)).click();
+  r.ok('tapping the 10.11 line opens 9–12.11', openBlocks(A).join() === D(9) && A.w.document.activeElement === head(A, D(9)));
+  await sleep(1200);
+  r.ok('view changes write nothing to Firestore or the local data copy', !(await getDoc(ref())).exists() && localStorage.getItem(LOCAL_KEY) === null);
+
+  // 5. "ליום הבא" into a collapsed block opens it and keeps focus on the item
+  act(A, 'menu', 'i12'); act(A, 'next', 'i12');
+  r.ok('next day into collapsed 13–14 opens it', mainIds(A, D(13)).join() === 'i13,i12' && openBlocks(A).join() === `${D(9)},${D(13)}` && A.w.document.activeElement && A.w.document.activeElement.dataset.id === 'i12');
+  act(A, 'prev', 'i12');
+  head(A, D(13)).click();
+
+  // 6. drag onto a collapsed day line: end of that day, block stays collapsed
+  const dt = new A.w.DataTransfer();
+  const src = A.qq('[data-item="i10"]'), tgt = line(A, D(6)), tr = tgt.getBoundingClientRect();
+  src.dispatchEvent(new A.w.DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+  const over = new A.w.DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: tr.left + 30, clientY: tr.top + 10 });
+  tgt.dispatchEvent(over);
+  r.ok('dragover a collapsed line: accepted, highlighted, no drop line', over.defaultPrevented && tgt.classList.contains('drop-on') && !A.qq('.itin-dropline'));
+  tgt.dispatchEvent(new A.w.DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: tr.left + 30, clientY: tr.top + 10 }));
+  src.dispatchEvent(new A.w.DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
+  r.ok('dropped at the end of 6.11, 5–8 still collapsed, count updated', mainIds(A, D(6)).join() === 'i06,i10' && openBlocks(A).join() === D(9) && line(A, D(6)).querySelector('.itin-ccount').textContent === '2' && !A.qq('.drop-on, .dragging'));
+  r.ok('the line confirms the drop', line(A, D(6)).classList.contains('dropped'));
+  let d = await docWhen(x => x.items.i10.day === D(6));
+  r.ok('drop on a collapsed line persisted', d && d.items.i10.day === D(6) && d.items.i10.order === 1);
+
+  // 7. holding a drag over a collapsed header opens it (and nothing else moves)
+  const dt2 = new A.w.DataTransfer();
+  const s2 = A.qq('[data-item="i09"]'), h1 = head(A, D(1)), hr = h1.getBoundingClientRect();
+  s2.dispatchEvent(new A.w.DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt2 }));
+  h1.dispatchEvent(new A.w.DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt2, clientX: hr.left + 40, clientY: hr.top + 10 }));
+  r.ok('over a collapsed header: waiting, marked', h1.classList.contains('spring') && openBlocks(A).join() === D(9));
+  await sleep(1600); // SPRING_MS is 600; timers in a background tab can run late
+  r.ok('after the hold: 1–4.11 opens mid-drag', openBlocks(A).join() === `${D(1)},${D(9)}` && !h1.classList.contains('spring') && !!A.qq('[data-item="i09"].dragging'));
+  const c3 = A.qq(`[data-list="${D(3)}"]`), c3r = c3.getBoundingClientRect();
+  c3.dispatchEvent(new A.w.DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt2, clientX: c3r.left + 20, clientY: c3r.bottom - 2 }));
+  c3.dispatchEvent(new A.w.DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt2, clientX: c3r.left + 20, clientY: c3r.bottom - 2 }));
+  s2.dispatchEvent(new A.w.DragEvent('dragend', { bubbles: true, dataTransfer: dt2 }));
+  r.ok('…and the item drops onto 3.11 inside it', mainIds(A, D(3)).join() === 'i03,i09');
+  // a drag that only passes over a header does not open it
+  const dt3 = new A.w.DataTransfer();
+  const s3 = A.qq('[data-item="i09"]'), h5 = head(A, D(5)), h5r = h5.getBoundingClientRect();
+  s3.dispatchEvent(new A.w.DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt3 }));
+  h5.dispatchEvent(new A.w.DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt3, clientX: h5r.left + 40, clientY: h5r.top + 10 }));
+  s3.dispatchEvent(new A.w.DragEvent('dragend', { bubbles: true, dataTransfer: dt3 }));
+  await sleep(1600);
+  r.ok('passing over a header without holding: stays collapsed', !openBlocks(A).includes(D(5)) && !A.qq('.spring'));
+  await waitIdle(A);
+  A.f.remove();
+
+  // 8. read-only (failed load): the cards are inert, the view still works
+  {
+    const P = await open('loadtest=fail', true, 1300, 'none');
+    r.ok('failed load: cards inert, headers/lines/tools not', cardsInert(P) && !isInert(head(P, D(1))) && !isInert(line(P, D(2))) && !isInert(P.qq('#itin [data-bact="all"]')));
+    head(P, D(1)).click();
+    r.ok('failed load: a block can still be opened to read', openBlocks(P).join() === D(1));
+    line(P, D(6)).click();
+    r.ok('failed load: and from its line', openBlocks(P).join() === `${D(1)},${D(5)}`);
+    P.f.remove();
+  }
+
+  // 9. phone: one column, thumb-sized headers and lines, no sideways scroll
+  const M = await open('', true, 390, 'clear');
+  const visLines = M.qa('#itin [data-cday]').filter(x => x.offsetParent);
+  r.ok('phone: one line per row', visLines.length === 28 && [...new Set(M.qa(`[data-compact="${D(1)}"] [data-cday]`).map(x => Math.round(x.getBoundingClientRect().left)))].length === 1);
+  r.ok('phone: lines and headers >= 44px tall, full width', visLines.every(x => x.getBoundingClientRect().height >= 44 && x.getBoundingClientRect().width > 300) && M.qa('#itin [data-bhead]').every(x => x.getBoundingClientRect().height >= 44), visLines.map(x => Math.round(x.getBoundingClientRect().height)).slice(0, 4));
+  r.ok('phone: expand/collapse all are tappable (>= 36px)', M.qa('#itin [data-bact="all"]').every(x => x.getBoundingClientRect().height >= 36));
+  r.ok('phone: no horizontal page scroll', M.w.document.documentElement.scrollWidth <= M.w.innerWidth);
+  M.qq('#itin [data-bact="all"][data-id="open"]').click();
+  r.ok('phone, all open: still no horizontal scroll', M.w.document.documentElement.scrollWidth <= M.w.innerWidth);
+  M.f.remove();
+
+  localStorage.removeItem(VIEW_KEY);
+  await fresh();
+  r.ok('real itinerary doc untouched', (await realSnap()) === realBefore);
   return r.result();
 }
 

@@ -31,6 +31,8 @@ const LOCAL = { places: 'madrid.places.test', itinerary: 'madrid.itinerary.test'
 const canonJson = o => JSON.stringify(o, (k, v) => (v && typeof v === 'object' && !Array.isArray(v)) ? Object.fromEntries(Object.keys(v).sort().map(x => [x, v[x]])) : v);
 const isInert = el => !!el && !!el.closest('[inert]');
 const D = n => `2026-11-${String(n).padStart(2, '0')}`;
+// the board's collapse state (localStorage, serve-test.py key): every block open, so all 30 cards are measurable
+const openAllBlocks = () => localStorage.setItem('madrid.itinerary.view.test', JSON.stringify({ open: Object.fromEntries([1, 5, 9, 13, 15, 19, 23, 27].map(n => [D(n), true])) }));
 
 async function guard() {
   const src = await (await fetch('/assets/places.js', { cache: 'no-store' })).text();
@@ -70,6 +72,7 @@ function openFrame(query, width = 1300) {
 }
 const settledBanner = b => b && (b.hidden || b.classList.contains('failed'));
 async function open(query = '', width, wait = true) {
+  openAllBlocks();
   const f = await openFrame(query, width);
   const w = f.contentWindow, qq = s => w.document.querySelector(s), qa = s => [...w.document.querySelectorAll(s)];
   const p = { f, w, qq, qa };
@@ -319,6 +322,15 @@ export async function phaseBoard() {
   dragEl(A, src(), dayCard(A, D(5)), 'bottom');
   r.ok('same place twice on one day is refused', linkedOn(A, D(5), 'p_hola').length === 1);
   r.ok('drop line cleaned up', !A.qq('.itin-dropline'));
+  // pool -> a collapsed day (blocks of 4): end of that day, the block stays collapsed
+  A.qq(`#itin [data-bhead="${D(5)}"]`).click();
+  r.ok('block 5–8.11 collapsed', A.qq(`[data-bbody="${D(5)}"]`).hidden && !A.qq(`[data-compact="${D(5)}"]`).hidden);
+  r.ok('drag pool onto the collapsed 6.11 line accepted', dragEl(A, src(), A.qq(`[data-cday="${D(6)}"]`), 'top'));
+  r.ok('…placed at the end of 6.11, block still collapsed, the line counts it', linkedOn(A, D(6), 'p_hola').length === 1 && mainIds(A, D(6))[1] === linkedOn(A, D(6), 'p_hola')[0].dataset.item && A.qq(`[data-bbody="${D(5)}"]`).hidden && A.qq(`[data-cday="${D(6)}"] .itin-ccount`).textContent === '2', mainIds(A, D(6)));
+  r.ok('no drop highlight left on the line', !A.qq('.itin-cday.drop-on'));
+  tapDay(A, 'cafe', 'p_hola', D(6));
+  A.qq(`#itin [data-bhead="${D(5)}"]`).click();
+  r.ok('removed again from 6.11, block open again', linkedOn(A, D(6), 'p_hola').length === 0 && !A.qq(`[data-bbody="${D(5)}"]`).hidden);
   // board linked item onto the pool = remove from that day
   const onFive = linkedOn(A, D(5), 'p_hola')[0];
   const ok5 = dragEl(A, onFive, A.qq('#places'), 'top');
@@ -601,7 +613,7 @@ export async function phaseGuard() {
   await waitIdle(A);
   for (let i = 0; i < 20 && A.qq('#placesBanner').hidden; i++) await sleep(200);
   r.ok('stale page refuses to save: conflict banner', !A.qq('#placesBanner').hidden && A.qq('#placesBanner').textContent === 'ההמלצות השתנו במכשיר אחר — רענן');
-  r.ok('pool read-only, board still editable', isInert(A.qq('#places')) && !isInert(A.qq('#itin')));
+  r.ok('pool read-only, board still editable', isInert(A.qq('#places')) && A.qa('#itin [data-bbody]').every(b => !isInert(b)));
   const d = await read(pRef());
   r.ok('the other device\'s change survives, the stale one did not land', d.places.p_toma.been === true && !d.places.p_hola.been);
   // focus check: a page that loaded before a remote change shows the banner on return

@@ -20,6 +20,9 @@ Usage:  python3 tests/serve-test.py [port]      (default 8000)
   and /assets/places.js -> state/places_test (+ __loadDoc on its own query
   param, ?placesload=slow|fail, so a failed pool load leaves the board alone;
   window.__placesIdle).
+- Pins "today" in /assets/itinerary.js (which block of the board opens by
+  default) to 2026-11-14, unless the page has ?today=YYYY-MM-DD, and gives the
+  board's collapse state its own localStorage key (madrid.itinerary.view.test).
 - Pins the clock of /assets/night.js to noon (day colours), unless the page has
   ?hour=21 or a test sets window.__nightHour.
 
@@ -54,7 +57,15 @@ REWRITES = {
         ("'state', 'itinerary')", "'state', 'itinerary_test')"),
         ("'madrid.itinerary.v1'", "'madrid.itinerary.test'"),
         ("getDoc(docRef).then(", "__loadDoc(docRef).then("),
-    ], BUDGET_SHIM.replace("__budgetIdle", "__itinIdle")),
+        ("'madrid.itinerary.view.v1'", "'madrid.itinerary.view.test'"),
+        ("todayISO(now = new Date())", "todayISO(now = __testNow())"),
+    ], BUDGET_SHIM.replace("__budgetIdle", "__itinIdle") + """
+// "today" for the default open block: fixed, so the suites don't depend on the real date
+function __testNow(){
+  const at = new URLSearchParams(location.search).get('today') || '2026-11-14';
+  return new Date(at + 'T12:00:00');
+}
+"""),
     # ...the recommendations pool too, with its own ?placesload hook...
     "/assets/places.js": ([
         ("'state', 'places')", "'state', 'places_test')"),
@@ -112,6 +123,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("", port), Handler) as srv:
+    # dossier.html asks for 6 files at once, one connection each (HTTP/1.0).
+    # A plain TCPServer is single-threaded with a listen backlog of 5, so one of
+    # them was sometimes refused: when that was places.js (a module script is
+    # not retried), the pool never loaded and places-checks failed at random.
+    class Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
+        allow_reuse_address = True
+        daemon_threads = True
+        request_queue_size = 64
+    with Server(("", port), Handler) as srv:
         srv.serve_forever()

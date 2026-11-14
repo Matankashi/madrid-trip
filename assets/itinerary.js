@@ -42,6 +42,25 @@ const PARTS = [
   { from: '2026-11-01', after: false, label: 'חלק א׳', range: '1–14.11' },
   { from: '2026-11-15', after: true, label: 'חלק ב׳', range: '15–30.11' }
 ];
+/* בלוקים של 4 ימים, בתוך כל חלק (כדי שאף בלוק לא יחצה את הכותרת של חלק ב׳):
+   1–4, 5–8, 9–12, 13–14 | 15–18, 19–22, 23–26, 27–30. בלוק מכווץ = שורה
+   קומפקטית לכל יום. מה פתוח הוא העדפת תצוגה של המכשיר הזה: localStorage
+   בלבד (VIEW_KEY), אף פעם לא Firestore. id של בלוק = היום הראשון שלו. */
+const BLOCK_SIZE = 4;
+const BLOCKS = PARTS.flatMap(p => {
+  const ds = TRIP_DAYS.filter(d => isAfter(d) === p.after);
+  const out = [];
+  for (let i = 0; i < ds.length; i += BLOCK_SIZE) out.push({ id: ds[i], days: ds.slice(i, i + BLOCK_SIZE), after: p.after });
+  return out;
+});
+const blockById = id => BLOCKS.find(b => b.id === id);
+const blockOf = day => BLOCKS.find(b => b.days.includes(day));
+const VIEW_KEY = 'madrid.itinerary.view.v1';
+const SPRING_MS = 600; // גרירה שעומדת על כותרת של בלוק מכווץ פותחת אותו
+/* היום לפי השעון של המכשיר (תאריך מקומי) */
+function todayISO(now = new Date()){
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
 const WEEKDAYS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
 const STATUS_LABEL = { booked: 'BOOKED', planned: 'PLANNED', optional: 'OPTIONAL', open: 'OPEN' };
 const STATUS_HE = { booked: 'סגור', planned: 'מתוכנן', optional: 'אופציונלי', open: 'פתוח' };
@@ -150,9 +169,13 @@ function fmtDay(day){
   const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(day || '');
   return m ? `${Number(m[2])}.${Number(m[1])}` : String(day || '?');
 }
-function weekday(day){
+function weekdayShort(day){
   const d = new Date(day + 'T12:00:00Z');
-  return isNaN(d) ? '' : 'יום ' + WEEKDAYS[d.getUTCDay()];
+  return isNaN(d) ? '' : WEEKDAYS[d.getUTCDay()];
+}
+function weekday(day){
+  const s = weekdayShort(day);
+  return s ? 'יום ' + s : '';
 }
 const statusOf = id => (STATUS_LABEL[items[id].status] ? items[id].status : 'open');
 
@@ -446,20 +469,150 @@ function renderPart(p){
     h('span', { class: 'mono itin-part-range', text: p.range }));
 }
 
+/* ---------- כיווץ ופתיחה (תצוגה בלבד) ----------
+   view = {blockId: true|false} — רק בלוק שהמשתמש פתח או סגר (גם "פתח/כווץ
+   הכל"). בלי ערך: ברירת המחדל — פתוח רק הבלוק של היום; לפני הטיול הבלוק
+   הראשון, אחרי הטיול כלום. בלוק שעבר נשאר מכווץ עד שפותחים אותו. */
+let view = loadView();
+function loadView(){
+  try {
+    const v = JSON.parse(localStorage.getItem(VIEW_KEY));
+    return v && v.open && typeof v.open === 'object' ? Object.assign({}, v.open) : {};
+  } catch (e) {
+    console.error('madrid-trip: board view state unreadable, using the default', e);
+    return {};
+  }
+}
+function saveView(){
+  try { localStorage.setItem(VIEW_KEY, JSON.stringify({ open: view })); }
+  catch (e) { console.error('madrid-trip: board view state not saved', e); }
+}
+function defaultOpen(b){
+  const t = todayISO();
+  return t < TRIP_DAYS[0] ? b === BLOCKS[0] : b.days.includes(t);
+}
+const isOpen = b => (Object.prototype.hasOwnProperty.call(view, b.id) ? view[b.id] === true : defaultOpen(b));
+/* בלי render: רק מחליף hidden/aria על מה שכבר בדף, כך שפוקוס וגרירה באמצע
+   לא נשברים (render בונה מחדש את הלוח, וגם את האלמנט שנגרר). */
+function applyOpen(){
+  const root = $('#itin');
+  if (!root) return;
+  BLOCKS.forEach(b => {
+    const el = root.querySelector(`[data-block="${b.id}"]`);
+    if (!el) return;
+    const o = isOpen(b);
+    el.classList.toggle('open', o);
+    el.querySelector('[data-bhead]').setAttribute('aria-expanded', String(o));
+    el.querySelector('[data-bbody]').hidden = !o;
+    el.querySelector('[data-compact]').hidden = o;
+  });
+}
+function setOpen(id, open){
+  if (!blockById(id)) return;
+  view[id] = !!open;
+  saveView();
+  applyOpen();
+}
+function setAllOpen(open){
+  BLOCKS.forEach(b => { view[b.id] = !!open; });
+  saveView();
+  applyOpen();
+}
+
+const rangeOf = b => (b.days.length > 1 ? `${Number(b.days[0].slice(8))}–${fmtDay(b.days[b.days.length - 1])}` : fmtDay(b.days[0]));
+const countHe = n => (n === 0 ? 'אין פריטים' : n === 1 ? 'פריט אחד' : `${n} פריטים`);
+
+/* שורה קומפקטית ליום בבלוק מכווץ: תאריך, יום בשבוע, כותרת היום (או של
+   הפריט הראשון), מספר פריטים ונקודה בצבע הסטטוס לכל פריט. לחיצה פותחת את
+   הבלוק; גם אזור שחרור בגרירה (data-cday, לא data-day). */
+const CDOTS_MAX = 6;
+function renderCompact(day){
+  const alts = altsOn(day);
+  const all = alts.concat(itemsOn(day)); // אותו סדר כמו בכרטיס
+  const own = days[day] && days[day].title ? String(days[day].title) : '';
+  const title = own || (all.length ? titleOf(all[0]) : '');
+  const n = all.length;
+  const byStatus = Object.keys(STATUS_HE).map(st => [st, all.filter(id => statusOf(id) === st).length]).filter(x => x[1]);
+  const label = `${fmtDay(day)}, ${weekday(day)}: ${title || 'אין פריטים'}` + (n ? ` · ${countHe(n)} (${byStatus.map(([st, k]) => `${k} ${STATUS_HE[st]}`).join(', ')})` : '') + ' — פתיחה';
+  const dots = h('span', { class: 'itin-cdots', 'aria-hidden': 'true' });
+  all.slice(0, CDOTS_MAX).forEach(id => dots.appendChild(h('span', { class: `itin-cdot st-${statusOf(id)}` + (alts.includes(id) ? ' alt' : ''), 'data-st': statusOf(id) })));
+  if (n > CDOTS_MAX) dots.appendChild(h('span', { class: 'itin-cmore', text: `+${n - CDOTS_MAX}` }));
+  return h('button', { type: 'button', class: `itin-cday k-${kindOf(day)}` + (isAfter(day) ? ' after' : ''), 'data-cday': day, 'data-bact': 'openday', 'data-id': day, 'aria-label': label },
+    h('span', { class: 'mono itin-cdate', text: fmtDay(day) }),
+    h('span', { class: 'itin-cwd', text: weekdayShort(day) }),
+    h('span', { class: 'itin-ctitle' + (own ? '' : ' derived') + (title ? '' : ' empty'), text: title || 'אין פריטים' }),
+    n ? h('span', { class: 'mono itin-ccount', text: String(n) }) : null,
+    n ? dots : null);
+}
+
+function renderBlock(b){
+  const open = isOpen(b);
+  const total = b.days.reduce((k, d) => k + itemsOn(d).length, 0);
+  const bodyId = 'itinb-' + b.id;
+  const el = h('div', { class: 'itin-block' + (b.after ? ' after' : '') + (open ? ' open' : ''), 'data-block': b.id, role: 'group', 'aria-label': rangeOf(b) });
+  el.appendChild(h('button', { type: 'button', class: 'itin-bhead', 'data-bhead': b.id, 'data-bact': 'toggle', 'data-id': b.id, 'aria-expanded': String(open), 'aria-controls': bodyId },
+    h('span', { class: 'mono itin-brange', text: rangeOf(b) }),
+    h('span', { class: 'itin-bmeta', text: `${b.days.length} ימים · ${countHe(total)}` }),
+    b.days.includes(todayISO()) ? h('span', { class: 'itin-btoday', text: 'היום' }) : null,
+    h('span', { class: 'itin-bchev', 'aria-hidden': 'true' })));
+  const compact = h('div', { class: 'itin-compact', 'data-compact': b.id, hidden: open });
+  b.days.forEach(d => compact.appendChild(renderCompact(d)));
+  el.appendChild(compact);
+  const body = h('div', { class: 'itin-bbody', id: bodyId, 'data-bbody': b.id, hidden: !open });
+  b.days.forEach(d => body.appendChild(renderDay(d)));
+  el.appendChild(body);
+  return el;
+}
+
+const renderTools = () => h('div', { class: 'itin-tools' },
+  h('button', { type: 'button', class: 'linkbtn', 'data-bact': 'all', 'data-id': 'open' }, 'פתח הכל'),
+  h('button', { type: 'button', class: 'linkbtn', 'data-bact': 'all', 'data-id': 'close' }, 'כווץ הכל'));
+
+/* inert רק על הכרטיסים עצמם (data-bbody), לא על כל #itin: כותרות הבלוקים,
+   השורות הקומפקטיות ו"פתח/כווץ הכל" הם תצוגה בלבד, וצריכים לעבוד גם
+   כשהלו"ז לקריאה בלבד (טעינה שנכשלה) — אחרת אי אפשר לפתוח בלוק ולקרוא. */
+function applyInert(){
+  const root = $('#itin');
+  if (!root) return;
+  const blocked = loadState !== 'ready';
+  root.querySelectorAll('[data-bbody]').forEach(b => { b.inert = blocked; });
+}
+
 function render(focusSel){
   const root = $('#itin');
   if (!root) return;
   root.textContent = '';
-  TRIP_DAYS.forEach(d => {
-    const part = PARTS.find(p => p.from === d);
-    if (part) root.appendChild(renderPart(part));
-    root.appendChild(renderDay(d));
+  root.appendChild(renderTools());
+  PARTS.forEach(p => {
+    root.appendChild(renderPart(p));
+    BLOCKS.filter(b => b.after === p.after).forEach(b => root.appendChild(renderBlock(b)));
   });
-  if (Object.keys(items).some(id => !TRIP_DAYS.includes(items[id].day))) root.appendChild(renderDay(null));
+  if (Object.keys(items).some(id => !TRIP_DAYS.includes(items[id].day))) root.appendChild(h('div', { class: 'itin-bbody itin-other', 'data-bbody': 'other' }, renderDay(null)));
+  applyInert();
   renderSummary();
   const f = focusSel && root.querySelector(focusSel);
-  if (f) f.focus();
+  if (f) {
+    // הפוקוס עובר לבלוק מכווץ (למשל "ליום הבא" מ-12.11 ל-13.11) — פותחים אותו
+    const blk = f.closest('[data-bbody]') && f.closest('[data-block]');
+    if (blk && !isOpen(blockById(blk.dataset.block))) setOpen(blk.dataset.block, true);
+    f.focus();
+  }
   renderListeners.forEach(cb => { try { cb(); } catch (e) { console.error('madrid-trip: itinerary render listener failed', e); } });
+}
+
+function onView(act, id){
+  const root = $('#itin');
+  if (act === 'toggle') { const b = blockById(id); if (b) setOpen(id, !isOpen(b)); return; }
+  if (act === 'all') return setAllOpen(id === 'open');
+  if (act === 'openday') {
+    const b = blockOf(id);
+    if (!b) return;
+    setOpen(b.id, true);
+    const head = root.querySelector(`[data-bhead="${b.id}"]`);
+    const card = root.querySelector(`.itin-day[data-day="${id}"]`);
+    if (head) head.focus({ preventScroll: true }); // השורה שנלחצה כבר מוסתרת
+    if (card && card.scrollIntoView) card.scrollIntoView({ block: 'start' });
+  }
 }
 
 function announce(msg){
@@ -651,6 +804,9 @@ function wire(){
   const root = $('#itin');
   if (!root) return;
   root.addEventListener('click', e => {
+    // תצוגה (כיווץ/פתיחה) — עובד בכל מצב טעינה, לא כותב כלום ל-Firestore
+    const v = e.target.closest('[data-bact]');
+    if (v && root.contains(v)) return onView(v.dataset.bact, v.dataset.id);
     const b = e.target.closest('[data-act]');
     if (b && root.contains(b)) onAct(b.dataset.act, b.dataset.id);
   });
@@ -677,21 +833,42 @@ function wire(){
   /* גרירה (עכבר/משטח מגע). אותה פעולה בדיוק כמו הכפתורים — moveTo.
      מקום מההמלצות (placeDrag, נקבע ב-places.js) נכנס ליום דרך addPlacement. */
   const line = h('div', { class: 'itin-dropline', 'aria-hidden': 'true' });
+  /* בלוק מכווץ: שחרור על השורה הקומפקטית של יום = לסוף אותו יום (סימון
+     .drop-on במקום קו). גרירה שעומדת SPRING_MS על כותרת של בלוק מכווץ פותחת
+     אותו (.spring בזמן ההמתנה), ואז משחררים על יום מסוים. */
+  let springFor = null, springTimer = null;
+  const cancelSpring = () => {
+    clearTimeout(springTimer); springTimer = null;
+    root.querySelectorAll('.itin-bhead.spring').forEach(x => x.classList.remove('spring'));
+    springFor = null;
+  };
+  const clearDropOn = () => root.querySelectorAll('.itin-cday.drop-on').forEach(x => x.classList.remove('drop-on'));
   const clearDrag = () => {
     line.remove();
+    cancelSpring();
+    clearDropOn();
     root.querySelectorAll('.dragging').forEach(x => x.classList.remove('dragging'));
     dragId = null;
     placeDrag = null;
   };
   endDrag = clearDrag;
   const dropTarget = (e) => {
+    const cl = e.target.closest && e.target.closest('[data-cday]');
+    if (cl && root.contains(cl)) return { day: cl.dataset.cday, before: null, compact: cl };
     // כל הכרטיס הוא אזור שחרור, גם הכותרת שלו — לא רק רשימת הפריטים
     const card = e.target.closest && e.target.closest('.itin-day');
     const list = card && card.querySelector('[data-list]');
     if (!list || list.dataset.list === 'other' || !root.contains(list)) return null;
     const cards = [...list.querySelectorAll(':scope > [data-item], :scope > [data-form]')].filter(c => c.dataset.item !== dragId && c.dataset.form !== 'new');
     const before = cards.find(c => { const r = c.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; }) || null;
-    return { list, before };
+    return { day: list.dataset.list, list, before };
+  };
+  // אחרי שחרור על שורה קומפקטית: הבלוק נשאר מכווץ, השורה מהבהבת כאישור
+  const flashCompact = day => {
+    const el = root.querySelector(`[data-cday="${day}"]`);
+    if (!el) return;
+    el.classList.add('dropped');
+    setTimeout(() => el.classList.remove('dropped'), 1200);
   };
   root.addEventListener('dragstart', e => {
     const card = e.target.closest && e.target.closest('[data-item]');
@@ -703,28 +880,53 @@ function wire(){
   });
   root.addEventListener('dragover', e => {
     if (!dragId && !placeDrag) return;
+    const hd = e.target.closest && e.target.closest('[data-bhead]');
+    const hb = hd && blockById(hd.dataset.bhead);
+    if (hb && !isOpen(hb)) {
+      line.remove(); clearDropOn();
+      if (springFor !== hb.id) {
+        cancelSpring();
+        springFor = hb.id;
+        hd.classList.add('spring');
+        springTimer = setTimeout(() => { const id = springFor; cancelSpring(); setOpen(id, true); }, SPRING_MS);
+      }
+      return;
+    }
+    if (springFor) cancelSpring();
     const t = dropTarget(e);
-    if (!t || loadState !== 'ready') { line.remove(); return; }
+    if (!t || loadState !== 'ready') { line.remove(); clearDropOn(); return; }
     e.preventDefault();
     e.dataTransfer.dropEffect = placeDrag ? 'copy' : 'move';
+    if (t.compact) {
+      line.remove();
+      if (!t.compact.classList.contains('drop-on')) { clearDropOn(); t.compact.classList.add('drop-on'); }
+      return;
+    }
+    clearDropOn();
     const anchor = t.before || t.list.querySelector(':scope > .itin-add, :scope > [data-form="new"]');
     if (anchor) t.list.insertBefore(line, anchor); else t.list.appendChild(line);
+  });
+  // יציאה מהלוח באמצע גרירה (למשל אל המאגר): בלי קו, סימון או פתיחה תלויים
+  root.addEventListener('dragleave', e => {
+    if (e.relatedTarget && root.contains(e.relatedTarget)) return;
+    line.remove(); clearDropOn(); cancelSpring();
   });
   root.addEventListener('drop', e => {
     if (!dragId && !placeDrag) return;
     const t = dropTarget(e);
     if (!t) return;
     e.preventDefault();
-    const id = dragId, pid = placeDrag;
+    const id = dragId, pid = placeDrag, day = t.day;
     const beforeId = t.before ? (t.before.dataset.item || t.before.dataset.form) : null;
     clearDrag();
-    if (pid) { addPlacement(pid, t.list.dataset.list, beforeId); return; }
+    if (pid) { if (addPlacement(pid, day, beforeId) && t.compact) flashCompact(day); return; }
     if (loadState !== 'ready' || !items[id]) return;
-    if (placeClash(id, t.list.dataset.list)) return announce(`${titleOf(id)} כבר ב-${fmtDay(t.list.dataset.list)}`);
+    if (placeClash(id, day)) return announce(`${titleOf(id)} כבר ב-${fmtDay(day)}`);
     menuFor = null;
-    moveTo(id, t.list.dataset.list, beforeId);
+    moveTo(id, day, beforeId);
     scheduleSave();
     render();
+    if (t.compact) flashCompact(day);
     announce(`${items[id].title} הועבר ל-${fmtDay(items[id].day)}`);
   });
   root.addEventListener('dragend', clearDrag);
@@ -759,8 +961,7 @@ const LOAD_MSG = {
 function setLoadState(state, msgKey){
   loadState = state;
   const blocked = state !== 'ready';
-  const root = $('#itin');
-  if (root) root.inert = blocked;
+  applyInert(); // הכרטיסים בלבד — ראו applyInert
   const banner = $('#itinBanner');
   if (banner) {
     banner.hidden = !blocked;

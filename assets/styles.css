@@ -435,7 +435,53 @@ input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var
 .itin-legend > span{display:inline-flex;align-items:center;gap:6px}
 #itinBanner{margin-bottom:10px}
 
-.itin{display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:6px}
+.itin{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+/* בלוקים של 4 ימים (assets/itinerary.js, BLOCKS): כותרת שמכווצת/פותחת,
+   ובבלוק מכווץ שורה קומפקטית לכל יום. הכרטיסים והשורות באותה רשת, כך
+   שכל יום נמצא באותו מקום פתוח או סגור. */
+.itin-bbody,.itin-compact{display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}
+.itin-compact{gap:6px}
+.itin-other{display:block}
+.itin-tools{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
+.itin-tools .linkbtn{min-height:36px;padding:4px 12px;font-family:var(--font-body);font-size:13px}
+.itin-block{display:flex;flex-direction:column;gap:8px}
+.itin-bhead{
+  display:flex;flex-wrap:wrap;align-items:center;gap:2px 12px;width:100%;min-height:48px;padding:8px 12px;
+  font-family:inherit;color:var(--ink);text-align:right;cursor:pointer;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+}
+.itin-block.after .itin-bhead{background:var(--paper);border-style:dashed;border-color:var(--sand)}
+.itin-bhead:hover,.itin-bhead:focus-visible{border-color:var(--ink);outline:none}
+.itin-bhead.spring{box-shadow:0 0 0 2px var(--rojo)}
+.itin-brange{font-size:16px;font-weight:600;line-height:1.2}
+.itin-bmeta{font-size:13px;color:var(--slate)}
+.itin-btoday{font-size:12px;font-weight:700;color:var(--rojo)}
+.itin-bchev{
+  margin-right:auto;width:9px;height:9px;flex:none;
+  border-left:2px solid var(--slate);border-bottom:2px solid var(--slate);
+  transform:translateY(-2px) rotate(45deg);transition:transform .15s;
+}
+.itin-block.open .itin-bchev{transform:translateY(-3px) rotate(-45deg)}
+.itin-cday{
+  display:flex;align-items:center;gap:8px;width:100%;min-width:0;min-height:48px;padding:6px 10px;
+  font-family:inherit;font-size:14px;line-height:1.3;color:var(--ink);text-align:right;cursor:pointer;
+  background:var(--surface);border:1px solid var(--line);border-right:4px solid var(--kind);border-radius:var(--radius);
+}
+.itin-cday.after{background:var(--paper);border-style:dashed;border-color:var(--sand);border-right-style:solid;border-right-color:var(--kind)}
+.itin-cday:hover,.itin-cday:focus-visible{box-shadow:0 0 0 1px var(--ink);outline:none}
+.itin-cday.drop-on{box-shadow:0 0 0 2px var(--rojo)}
+.itin-cday.dropped{box-shadow:0 0 0 2px var(--green)}
+.itin-cdate{flex:none;min-width:38px;font-size:14px;font-weight:600}
+.itin-cwd{flex:none;min-width:18px;font-size:12px;color:var(--slate)}
+.itin-ctitle{flex:1;min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.itin-ctitle.derived{font-weight:400}
+.itin-ctitle.empty{color:var(--slate);font-weight:400}
+.itin-ccount{flex:none;font-size:12px;color:var(--slate)}
+.itin-cdots{display:flex;align-items:center;gap:3px;flex:none}
+.itin-cdot{width:9px;height:9px;border-radius:50%;background:var(--st)}
+.itin-cdot.alt{background:none;border:1.5px solid var(--st)}
+.itin-cmore{font-size:11px;color:var(--slate)}
+.itin-day{scroll-margin-top:70px}
 .itin-day{
   display:flex;flex-direction:column;min-width:0;
   background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:10px 9px 9px;
@@ -556,13 +602,15 @@ input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var
   background:var(--green);color:var(--on-ink);font-size:11px;line-height:17px;text-align:center;
 }
 
-@media(max-width:480px){.itin{grid-template-columns:1fr}}
-@media(min-width:760px){.itin{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:480px){.itin-bbody,.itin-compact{grid-template-columns:1fr}}
+@media(min-width:760px){
+  .itin-bbody,.itin-compact{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .itin-day{scroll-margin-top:130px} /* nav + המאגר הדביק */
+}
 @media(min-width:1100px){
   .itin{
     --bw:min(1240px,calc(100vw - 48px));
     width:var(--bw);margin-left:calc((100% - var(--bw)) / 2);margin-right:calc((100% - var(--bw)) / 2);
-    grid-template-columns:repeat(7,minmax(0,1fr));
   }
 }
 /* פריט בלוח: חלק ביום / קטגוריה מעל הכותרת, "היינו" */
