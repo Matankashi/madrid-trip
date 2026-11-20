@@ -180,7 +180,9 @@ export async function phaseMain() {
   }
   // poster tiles: a colour + icon per day type, guessed from the content
   const kinds = A.qa('.itin-day').map(d => [...d.classList].find(c => c.startsWith('k-')).slice(2));
-  r.ok('tile kind per day', kinds.join() === 'arrival,city,football,museum,daytrip,museum,football,football,city,daytrip,museum,city,night,open' + ',open'.repeat(16), kinds);
+  r.ok('tile kind per day', kinds.join() === 'arrival,city,football,museum,daytrip,museum,football,football,city,daytrip,museum,park,night,open' + ',open'.repeat(16), kinds);
+  r.ok('≥760px: part heading sticks right under the sticky pool', A.w.getComputedStyle(A.qq('.itin-part')).position === 'sticky' && A.w.getComputedStyle(A.qq('.itin-part')).top === A.w.getComputedStyle(A.w.document.documentElement).getPropertyValue('--pool-bottom').trim() && parseFloat(A.w.getComputedStyle(A.w.document.documentElement).getPropertyValue('--pool-bottom')) > parseFloat(A.w.getComputedStyle(A.w.document.documentElement).getPropertyValue('--pool-top')));
+  r.ok('2.11 stays "city" although its description mentions פארק רטירו (new types read titles only)', A.qq(`[data-day="${D(2)}"]`).classList.contains('k-city'));
   r.ok('tile has a big icon and the kind colour', !!A.qq('[data-day="2026-11-03"] .itin-tile svg') && A.w.getComputedStyle(A.qq('[data-day="2026-11-03"] .itin-tile')).color === 'rgb(196, 38, 46)');
   // summary under the board, derived from the items
   const sum = st => A.qa(`[data-sum="${st}"] [data-sum-item]`).map(li => li.dataset.sumItem);
@@ -296,6 +298,24 @@ export async function phaseMain() {
   act(A, 'dayedit', D(6)); setDF('title', '  '); act(A, 'daysave', D(6));
   d = await docWhen(x => x.days && !x.days[D(6)] && x.days[D(5)] && !x.days[D(5)].kind);
   r.ok('empty title + automatic kind removes the day entry', d && !d.days[D(6)] && d.days[D(5)].title === 'יום טולדו' && !A.qq(`[data-daytitle="${D(6)}"]`), d && d.days);
+  // 6c. v1.30 day types: guessed from the day's own title (empty days), manual choice wins
+  const kindOn = n => ([...A.qq(`[data-day="${D(n)}"]`).classList].find(c => c.startsWith('k-')) || '').slice(2);
+  const opts = (act(A, 'dayedit', D(20)), A.qa(`[data-dayform="${D(20)}"] [data-df="kind"] option`).map(o => o.value));
+  r.ok('day editor lists 13 types + automatic, new ones included', opts.length === 14 && ['departure', 'spa', 'park', 'plaza', 'errand', 'music'].every(k => opts.includes(k)), opts);
+  act(A, 'daycancel', D(20));
+  const typed = [[20, 'DNI Apply', 'errand'], [21, 'טיסה חזרה', 'departure'], [22, 'Riela Bathhouse', 'spa'], [23, 'פארק מדריד ריו', 'park'], [24, 'Plaza Mayor', 'plaza'], [25, 'חדר חזרות והופעה', 'music'], [26, 'נחיתה שנייה', 'arrival']];
+  typed.forEach(([n, t]) => { act(A, 'dayedit', D(n)); setDF('title', t); act(A, 'daysave', D(n)); });
+  r.ok('day title drives the guess on an empty day', typed.every(([n, , k]) => kindOn(n) === k), typed.map(([n]) => kindOn(n)));
+  r.ok('new types: tile icon + own tint', typed.slice(0, 6).every(([n]) => !!A.qq(`[data-day="${D(n)}"] .itin-tile svg`)) && new Set(typed.slice(0, 6).map(([n]) => A.w.getComputedStyle(A.qq(`[data-day="${D(n)}"] .itin-tile`)).color)).size === 6);
+  act(A, 'dayedit', D(22));
+  r.ok('automatic option names the guess', /אוטומטי \(ספא \/ רוגע\)/.test(A.qq(`[data-dayform="${D(22)}"] [data-df="kind"] option`).textContent));
+  setDF('kind', 'museum'); act(A, 'daysave', D(22));
+  r.ok('manual choice beats the guess', kindOn(22) === 'museum');
+  d = await docWhen(x => x.days && x.days[D(22)] && x.days[D(22)].kind === 'museum');
+  r.ok('manual kind persisted, guessed kinds are not', d && d.days[D(22)].kind === 'museum' && [20, 21, 23, 24, 25].every(n => !d.days[D(n)].kind), d && d.days);
+  typed.forEach(([n]) => { act(A, 'dayedit', D(n)); setDF('title', ''); setDF('kind', ''); act(A, 'daysave', D(n)); });
+  d = await docWhen(x => x.days && typed.every(([n]) => !x.days[D(n)]));
+  r.ok('cleared again', d && typed.every(([n]) => !d.days[D(n)] && kindOn(n) === 'open'), d && d.days);
 
   // 7. add
   act(A, 'add', D(5)); act(A, 'save', 'new');

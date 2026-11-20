@@ -826,11 +826,20 @@ function wire(){
   document.addEventListener('dragstart', () => { const d = linkedDrag(); if (d) root.classList.add('dropzone'); });
   document.addEventListener('dragend', () => root.classList.remove('dropzone'));
 
-  // המאגר נדבק מתחת ל-nav הדביק של התיק
+  // המאגר נדבק מתחת ל-nav הדביק של התיק; --pool-bottom = איפה שהוא נגמר
+  // (רק כשהוא באמת דביק, מ-760px) — שם נדבקת כותרת החלק בלוח, וממנו נמדד
+  // ה-scroll-margin של הכרטיסים. נמדד מחדש כשהמאגר נפתח/נסגר או ה-nav נשבר לשורות.
   const nav = document.querySelector('nav');
-  const setTop = () => document.documentElement.style.setProperty('--pool-top', (nav ? nav.offsetHeight : 0) + 'px');
+  const pool = document.getElementById('places');
+  const setTop = () => {
+    const top = nav ? nav.offsetHeight : 0;
+    const sticky = pool && getComputedStyle(pool).position === 'sticky';
+    document.documentElement.style.setProperty('--pool-top', top + 'px');
+    document.documentElement.style.setProperty('--pool-bottom', (top + (sticky ? pool.offsetHeight : 0)) + 'px');
+  };
   setTop();
   window.addEventListener('resize', setTop);
+  if (window.ResizeObserver) { const ro = new ResizeObserver(setTop); if (nav) ro.observe(nav); if (pool) ro.observe(pool); }
 }
 
 /* ---------- שמירה (הדפוס של itinerary.js) ---------- */

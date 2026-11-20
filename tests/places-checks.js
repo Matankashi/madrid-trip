@@ -11,6 +11,7 @@
         await t.phaseParse();   // Takeout CSV / Saved Places.json / coordinates (pure)
         await t.phasePool();    // collapsed list, categories, add/edit, custom categories
         await t.phaseBoard();   // chips, drag in/out, several days, היינו, delete block, slots
+        await t.phaseKind();    // day type guessed from the pool category (v1.30)
         await t.phaseImport();  // file import: preview, duplicates, nothing overwritten
         await t.phaseFilter();  // "Madrid and around" filter in the import preview
         await t.phaseMap();     // overlay map from a place / a category / a board item
@@ -134,6 +135,35 @@ async function finish(r, realBefore) {
   r.ok('real places + itinerary docs untouched', (await realSnap()) === realBefore);
   closeAll();
   return r.result();
+}
+
+/* ---------- day type from the pool category (v1.30) ---------- */
+export async function phaseKind() {
+  await guard();
+  const r = reporter();
+  const realBefore = await realSnap();
+  const item = (day, pid, name) => ({ day, order: 0, status: 'optional', title: name, desc: '', url: '', placeId: pid });
+  await fresh({
+    items: { k1: item(D(20), 'p_park', 'Templo de Debod'), k2: item(D(21), 'p_spa', 'Riela'), k3: item(D(22), 'p_mus', 'Sorolla'), k4: item(D(23), 'p_hood', 'Huertas walk'), k5: item(D(24), 'p_park', 'Templo de Debod'), k6: item(D(25), 'p_hola', 'Hola Coffee'), k7: item(D(26), 'p_live', 'Sala Clamores') },
+    days: { [D(24)]: { kind: 'night' } }
+  });
+  const fx = FIXTURE();
+  Object.assign(fx.places, {
+    p_park: { name: 'Templo de Debod', cat: 'parks', hood: '', note: '', url: '', createdAt: 5, source: 'manual' },
+    p_spa: { name: 'Riela', cat: 'c_spa', hood: '', note: '', url: '', createdAt: 6, source: 'manual' },
+    p_mus: { name: 'Sorolla', cat: 'museums', hood: '', note: '', url: '', createdAt: 7, source: 'manual' },
+    p_hood: { name: 'Huertas walk', cat: 'hoods', hood: '', note: '', url: '', createdAt: 8, source: 'manual' },
+    p_live: { name: 'Sala Clamores', cat: 'music', hood: '', note: '', url: '', createdAt: 9, source: 'manual' }
+  });
+  fx.cats.c_spa = { label: 'ספא וחמאם', createdAt: 11 };
+  await setDoc(pRef(), fx);
+  const A = await open();
+  for (let i = 0; i < 40 && !A.qq(`[data-day="${D(20)}"] .itin-title`)?.textContent.includes('Templo'); i++) await sleep(150);
+  const kindOn = n => ([...A.qq(`.itin-day[data-day="${D(n)}"]`).classList].find(c => c.startsWith('k-')) || '').slice(2);
+  r.ok('פארקים -> park, user category "ספא…" -> spa, מוזיאונים -> museum, שכונות -> plazas, מוזיקה -> music', [[20, 'park'], [21, 'spa'], [22, 'museum'], [23, 'plaza'], [26, 'music']].every(([n, k]) => kindOn(n) === k), [20, 21, 22, 23, 26].map(kindOn));
+  r.ok('manual day type wins over the category', kindOn(24) === 'night');
+  r.ok('a category with no mapping (קפה) falls back to "city"', kindOn(25) === 'city');
+  return finish(r, realBefore);
 }
 
 /* ---------- 1. pure parsing (same module instance as this page) ---------- */
@@ -585,6 +615,7 @@ export async function phaseMobile() {
   await fresh();
   const M = await open('', 390);
   r.ok('phone: not sticky', M.w.getComputedStyle(M.qq('#places')).position !== 'sticky');
+  r.ok('phone: the board\'s part heading is not sticky either', M.w.getComputedStyle(M.qq('.itin-part')).position !== 'sticky');
   expand(M, 'cafe', 'p_hola');
   pact(M, 'chips', 'p_hola');
   const chips = M.qa('[data-place="p_hola"] .pool-day');

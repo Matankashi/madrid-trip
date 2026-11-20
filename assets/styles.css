@@ -516,6 +516,14 @@ input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var
 .k-city{--kind:var(--blue)}
 .k-night{--kind:var(--ink)}
 .k-open{--kind:var(--sand)}
+/* v1.30 — מהפלטה הקיימת בלבד; ירוק וזהב כבר תפוסים, אז פארק וכיכרות הם
+   תערובת של שני משתנים (נגזרים לבד גם בלילה) */
+.k-departure{--kind:color-mix(in srgb,var(--slate) 55%,var(--ink))}
+.k-plaza{--kind:color-mix(in srgb,var(--rojo) 45%,var(--gold))}
+.k-park{--kind:color-mix(in srgb,var(--green) 60%,var(--gold))}
+.k-spa{--kind:var(--purple)}
+.k-errand{--kind:var(--plum)}
+.k-music{--kind:color-mix(in srgb,var(--rojo) 30%,var(--purple))}
 .itin-tile{
   display:flex;align-items:center;justify-content:center;height:66px;margin:-2px 0 9px;
   color:var(--kind);border-radius:var(--radius);
@@ -605,7 +613,10 @@ input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var
 @media(max-width:480px){.itin-bbody,.itin-compact{grid-template-columns:1fr}}
 @media(min-width:760px){
   .itin-bbody,.itin-compact{grid-template-columns:repeat(4,minmax(0,1fr))}
-  .itin-day{scroll-margin-top:130px} /* nav + המאגר הדביק */
+  /* כותרת החלק נדבקת מתחת למאגר הדביק (--pool-bottom נמדד ב-places.js), כדי
+     שהמאגר לא יכסה אותה בגלילה; כרטיס שגוללים אליו נעצר מתחת לשלושתם */
+  .itin-part{position:sticky;top:var(--pool-bottom,0);z-index:5;background:var(--paper)}
+  .itin-day,.itin-block{scroll-margin-top:calc(var(--pool-bottom,130px) + 46px)}
 }
 @media(min-width:1100px){
   .itin{

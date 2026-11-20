@@ -67,8 +67,24 @@ const STATUS_HE = { booked: 'סגור', planned: 'מתוכנן', optional: 'או
 const TITLE_MAX = 120;
 const DAY_TITLE_MAX = 80;
 /* סוג יום → צבע (משתנה מהפלטה, ב-styles.css: .k-*) ואייקון גדול באריח */
-const KIND_HE = { arrival: 'הגעה', football: 'כדורגל', museum: 'מוזיאון', daytrip: 'טיול יום', city: 'העיר', night: 'לילה', open: 'פתוח' };
+const KIND_HE = { arrival: 'הגעה', departure: 'יציאה / טיסה', football: 'כדורגל', museum: 'מוזיאון', daytrip: 'טיול יום', city: 'העיר', plaza: 'כיכרות ושכונות', park: 'פארק / טבע', spa: 'ספא / רוגע', errand: 'סידורים', music: 'מוזיקה / הופעה', night: 'לילה', open: 'פתוח' };
+/* הסוגים מ-v1.30 (ספא, פארק, כיכרות, סידורים, מוזיקה; יציאה ב-KIND_RULES) נבדקים רק מול הכותרת של
+   פריט ומול הקטגוריה שלו בהמלצות — לא מול כל התיאור — כדי שיום שהניחוש שלו
+   כבר היה נכון (למשל 2.11 "מגלים את מדריד", שבתיאור יש "פארק רטירו") לא יחליף
+   סוג. הכללים הישנים ממשיכים לחפש גם בתיאור, כמו קודם. */
+const TITLE_RULES = [
+  [/ספא|מרחץ|חמאם|רוגע|עיסוי|[Bb]ath(house)?s?\b|[Bb]a[ñn]os\b|[Hh]ammam|\b[Ss]pa\b|[Ww]ellness|[Tt]ermas?\b|[Mm]assage/, 'spa'],
+  [/פארק|בוטני|גן החיות|רטירו|מדריד ריו|נהר|בטבע|הטבע|[Pp]ar(k|que)\b|[Jj]ard[ií]n|[Bb]ot[aá]nic|[Rr]etiro|Madrid R[ií]o|Casa de Campo|[Gg]arden/, 'park'],
+  [/כיכר|שכונ|פלאסה|[Pp]laza\b|[Bb]arrio|Puerta del Sol|Malasa[ñn]a|Chamber[ií]|La Latina|Lavapi[eé]s|Chueca/, 'plaza'],
+  [/חדר חזרות|הופעה|קונצרט|ג['׳]אז|פלמנקו|אופרה|[Cc]oncierto|[Cc]oncert|[Jj]azz|[Ff]lamenco|[Tt]ablao|[Ll]ive music/, 'music'],
+  [/סידור|ביורוקרט|שגרירות|קונסוליה|\b(DNI|NIE|TIE|NIF)\b|[Ee]mpadronamiento|[Cc]ita [Pp]revia|[Ee]xtranjer[ií]a/, 'errand']
+];
+/* קטגוריה במאגר ההמלצות → סוג יום (הקבועות ב-places.js; קטגוריה של המשתמש
+   נבדקת לפי השם שלה מול TITLE_RULES ו-KIND_RULES) */
+const CAT_KIND = { parks: 'park', museums: 'museum', hoods: 'plaza', music: 'music' };
 const KIND_RULES = [
+  // יציאה לפני הגעה: "טיסה חזור" מכילה "טיסה"
+  [/טיסה חזור|טיסה חזרה|טיסה הביתה|טיסה לישראל|טיסה לתל אביב|חזרה הביתה|חזרה לארץ|המראה|יציאה לשדה|[Dd]eparture|[Rr]eturn flight/, 'departure'],
   [/נחיתה|טיסה/, 'arrival'],
   [/אתלטיקו|יום משחק/, 'football'],
   [/טיול יום|טולדו|סגוביה/, 'daytrip'],
@@ -145,12 +161,26 @@ const placeOf = id => (items[id] && items[id].placeId && provider ? provider.get
 const titleOf = id => { const p = placeOf(id); return String((p && p.name) || items[id].title || ''); };
 const slotOf = id => (SLOT_HE[items[id].slot] ? items[id].slot : '');
 
+/* ניחוש לפי סדר: כותרת היום, הכותרת של הפריט הראשון, הקטגוריה שלו בהמלצות, כל
+   הטקסט של היום (כללים ישנים בלבד), הקטגוריה של פריט אחר, ואז "העיר".
+   בחירה ידנית בעורך הכרטיס (days[ISO].kind) תמיד גוברת — ראו kindOf. */
+const ruleKind = (rules, text) => { const r = rules.find(([re]) => re.test(text)); return r ? r[1] : null; };
+const titleKind = text => ruleKind(KIND_RULES, text) || ruleKind(TITLE_RULES, text); // הישנים קודם: יום שכבר זוהה לא משנה סוג
+function catKind(id){
+  const it = items[id];
+  if (!it.placeId || !provider || !placeOf(id)) return null;
+  const cat = placeOf(id).cat;
+  return CAT_KIND[cat] || (/^c_/.test(String(cat)) ? titleKind(provider.catLabel(it.placeId)) : null);
+}
 function guessKind(day){
+  // כותרת היום (שנכתבה בעורך הכרטיס) קודם — 18.11 "DNI Apply" הוא יום בלי פריטים
+  const own = days[day] && days[day].title ? titleKind(String(days[day].title)) : null;
+  if (own) return own;
   const ids = itemsOn(day).concat(altsOn(day));
   if (!ids.length) return 'open';
   const text = ids.map(id => `${titleOf(id)} ${items[id].desc || ''}`).join(' ');
-  const r = KIND_RULES.find(([re]) => re.test(titleOf(ids[0]))) || KIND_RULES.find(([re]) => re.test(text));
-  return r ? r[1] : 'city';
+  return titleKind(titleOf(ids[0])) || catKind(ids[0]) || ruleKind(KIND_RULES, text)
+    || ids.slice(1).map(id => ruleKind(TITLE_RULES, titleOf(id)) || catKind(id)).find(Boolean) || 'city';
 }
 const kindOf = day => (days[day] && KIND_HE[days[day].kind]) ? days[day].kind : guessKind(day);
 
@@ -231,10 +261,16 @@ const ICONS = {
   // אריח הכרטיס (סוג יום)
   frame: '<rect x="3" y="4" width="18" height="16" rx="1"/><rect x="6.5" y="7.5" width="11" height="9"/><path d="M6.5 15l3.5-3.5 2.5 2.5 2-2 3 3"/>',
   train: '<rect x="5" y="3" width="14" height="13" rx="3"/><path d="M5 10h14"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M8 20l2-4M16 20l-2-4"/>',
-  columns: '<path d="M3 21h18M4 9h16M12 3l9 5H3z"/><path d="M6 9v9M10 9v9M14 9v9M18 9v9M4 18h16"/>',
-  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'
+  skyline: '<path d="M2 21h20"/><path d="M3.5 21v-8h4v8"/><path d="M7.5 21V5.5h5.5V21"/><path d="M13 21v-6.5a3 3 0 0 1 6 0V21"/><path d="M16 11.5V9.5M19 21h1.5v-5H19"/><path d="M9.5 9h1.5M9.5 12h1.5M9.5 15h1.5"/>',
+  mic: '<rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 10.5a6.5 6.5 0 0 0 13 0M12 17v4M8.5 21h7"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  takeoff: '<path d="M3 21h18"/><path d="M20.5 5 3 10.5l4.5 1.5L4 17l11-5.5z"/><path d="M7.5 12 13 9"/>',
+  steam: '<path d="M3 13h18"/><path d="M4.5 13v1.5A5.5 5.5 0 0 0 10 20h4a5.5 5.5 0 0 0 5.5-5.5V13"/><path d="M8 3.5c-1.2 1.3 1.2 2.5 0 4M12 3.5c-1.2 1.3 1.2 2.5 0 4M16 3.5c-1.2 1.3 1.2 2.5 0 4"/>',
+  tree: '<path d="M8 15.5a4 4 0 0 1-1.2-7.8 5.2 5.2 0 0 1 10.4 0A4 4 0 0 1 16 15.5z"/><path d="M12 21v-9M12 15l-2.5-2M12 17.5l2.5-2"/><path d="M8.5 21h7"/>',
+  houses: '<path d="M2 21h20"/><path d="M3.5 21v-9L8 8l4.5 4v9"/><path d="M12.5 21V7l4-4 4 4v14"/><path d="M6.5 21v-4h3v4M15.5 10.5h2M15.5 14h2M15.5 17.5h2"/>',
+  clipboard: '<rect x="5" y="4.5" width="14" height="16.5" rx="2"/><path d="M9 4.5V3h6v1.5M9 7h6"/><path d="M8.5 14l2.5 2.5 4.5-5"/>'
 };
-const KIND_ICON = { arrival: 'plane', football: 'ball', museum: 'frame', daytrip: 'train', city: 'columns', night: 'headphones', open: 'sun' };
+const KIND_ICON = { arrival: 'plane', departure: 'takeoff', football: 'ball', museum: 'frame', daytrip: 'train', city: 'skyline', plaza: 'houses', park: 'tree', spa: 'steam', errand: 'clipboard', music: 'mic', night: 'headphones', open: 'sun' };
 // הסדר קובע: הכלל הראשון שמתאים מנצח
 const ICON_RULES = [
   [/נחיתה|טיסה|הצעדים הבאים|להאריך/, 'plane'],
