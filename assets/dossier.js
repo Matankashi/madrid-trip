@@ -1,80 +1,30 @@
-/* רשימת המשימות בתיק הטיול.
-   מקור האמת הוא Firestore, ב-/users/{uid}/state/checklist — מסונכרן
-   בזמן אמת בין מכשירים. כל שינוי גם נשמר מיד ב-localStorage כגיבוי
-   אופליין: אם אין רשת, קוראים משם; אם הרשת חוזרת, הכתיבה הבאה
-   מתעדכנת ל-Firestore כרגיל. הכתיבות ל-Firestore מבוצעות ב-debounce
-   כדי לא לשלוח בקשה על כל קליק. הטעינה מתחילה רק אחרי שהאימות נפתר
-   (onAuthStateChanged) — לפני זה אין עדיין uid לבנות ממנו את הנתיב. */
+/* הפרקים המכווצים בתיק (v1.31). כל פרק טקסט אחרי הלוח הוא <details> בתוך
+   <section id> — שורה אחת, סגור כברירת מחדל, נפתח בלחיצה (בלי JS). הקובץ
+   הזה רק דואג שקישור לפרק (בניווט, או כתובת עם #) יפתח אותו: הלחיצה
+   פותחת לפני שהדפדפן גולל, אז הגלילה נוחתת על פרק פתוח. מצב הפתיחה לא
+   נשמר. בהדפסה (ייצוא ל-PDF, ראו README) כל הפרקים נפתחים, ואחריה חוזרים
+   למצב שהיו בו. (עד v1.30 כאן הייתה רשימת המשימות, פרק 09 — נמחקה; המסמך
+   state/checklist נשאר ב-Firestore כמו שהוא ולא נקרא יותר.) */
 
-import { auth, db } from './firebase-init.js';
-import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
-import { doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
-
-const STORE_KEY = 'madrid.checklist.v1';
-const DEBOUNCE_MS = 800;
-
-function loadLocal(){
-  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
-  catch (e) { return {}; }
+function openTarget(hash){
+  if (!hash || hash.length < 2) return;
+  let id;
+  try { id = decodeURIComponent(hash.slice(1)); } catch (e) { console.error('madrid-trip: bad section hash', hash, e); return; }
+  const sec = document.getElementById(id);
+  const d = sec && sec.querySelector(':scope > details');
+  if (d) d.open = true;
 }
 
-function saveLocal(state){
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
-  catch (e) { /* אחסון חסום — ממשיכים בלי שמירה מקומית */ }
-}
-
-const items = document.querySelectorAll('[data-c]');
-let state = {};
-let docRef = null;
-let saveTimer = null;
-let remoteLoaded = false;
-
-function render(){
-  items.forEach(function(el, i){
-    el.classList.toggle('on', !!state[keyOf(el, i)]);
-  });
-}
-
-function scheduleSave(){
-  saveLocal(state);
-  if (!docRef) return;
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(function(){
-    setDoc(docRef, state).catch(function(){ /* אופליין — כבר נשמר ב-localStorage */ });
-  }, DEBOUNCE_MS);
-}
-
-// מפתח קבוע מ-data-c="..." אם יש (כך מחיקת פריט לא מזיזה סימונים של אחרים);
-// בלי ערך — המפתח הישן לפי מיקום, item0, item1...
-const keyOf = (el, i) => el.dataset.c || ('item' + i);
-
-items.forEach(function(el, i){
-  const key = keyOf(el, i);
-  el.addEventListener('click', function(){
-    el.classList.toggle('on');
-    state[key] = el.classList.contains('on');
-    scheduleSave();
-  });
+document.addEventListener('click', e => {
+  const a = e.target.closest && e.target.closest('a[href^="#"]');
+  if (a) openTarget(a.getAttribute('href'));
 });
+window.addEventListener('hashchange', () => openTarget(location.hash));
+openTarget(location.hash);
 
-onAuthStateChanged(auth, function(user){
-  if (!user) return; // assets/auth-guard.js כבר מטפל בהפניה להתחברות
-
-  docRef = doc(db, 'users', user.uid, 'state', 'checklist');
-
-  onSnapshot(docRef, function(snap){
-    if (snap.exists()) {
-      state = snap.data();
-    } else if (!remoteLoaded) {
-      state = loadLocal(); // ריצה ראשונה למשתמש הזה — מעבירים סימונים ישנים מ-localStorage
-    }
-    remoteLoaded = true;
-    saveLocal(state);
-    render();
-  }, function(){
-    if (remoteLoaded) return;
-    state = loadLocal();
-    remoteLoaded = true;
-    render();
-  });
+let printed = [];
+window.addEventListener('beforeprint', () => {
+  printed = [...document.querySelectorAll('section.fold > details:not([open]), details.fold-note:not([open])')];
+  printed.forEach(d => { d.open = true; });
 });
+window.addEventListener('afterprint', () => { printed.forEach(d => { d.open = false; }); printed = []; });

@@ -29,14 +29,14 @@ Firebase Console → Authentication → Users.
 |---|---|
 | צבעים, גופנים, מרווחים | `assets/styles.css` — הכל ב-`:root` בראש הקובץ |
 | מספרי ברירת המחדל בתקציב | `assets/budget.js` — האובייקט `PRESETS` |
-| תוכן התיק | `dossier.html` |
-| רשימת המשימות | `dossier.html`, החלק בסוף עם `data-c` — הסימונים עצמם נשמרים ב-Firestore, לא בקובץ |
+| תוכן התיק | `dossier.html` — הלוח ראשון, ואחריו כל פרק כשורה מכווצת (`section.fold`) |
 | config של Firebase | `assets/firebase-init.js` |
 | כללי אבטחה של Firestore | מעדכנים בקונסולה (Firestore → Rules), ואז מעתיקים ל-`firestore.rules` לתיעוד — אין פריסה אוטומטית |
 
 ## ייצוא ל-PDF
 
-לפתוח את `dossier.html` בדפדפן, `Cmd/Ctrl + P`, ולבחור שמירה כ-PDF.
+לפתוח את `dossier.html` בדפדפן, `Cmd/Ctrl + P`, ולבחור שמירה כ-PDF. הפרקים
+המכווצים נפתחים לבד להדפסה וחוזרים למצבם אחריה.
 בהגדרות ההדפסה כדאי לסמן "גרפיקת רקע" כדי שהצבעים יישמרו.
 
 ## עבודה עם Claude Code

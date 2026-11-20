@@ -480,21 +480,63 @@ function renderDayForm(day){
 /* סיכום מתחת ללוח, נגזר מהפריטים בלבד (אין עותק שני לערוך): סגור /
    מתוכנן / אופציונלי, כל פריט "תאריך · כותרת" לפי סדר הימים. השורה של
    הלינה (Onefam 1–8.11, 8–14.11 סגור, 15–30.11 פתוח) קבועות ב-HTML — הן לא
-   פעילות ולא פריטים בלוח. */
+   פעילות ולא פריטים בלוח.
+   אופציונלי (v1.31) צפוף: שורה אחת לכל יום ("תאריך · שם · שם", כל שם
+   ב-span עם data-sum-item), ורק SUM_OPT_LINES שורות — מהיום והלאה (אם נשארו
+   פחות, השורות האחרונות). "הצג הכל" פותח את כל הימים; זו תצוגה בלבד, לא
+   נשמרת ולא מרנדרת את הלוח. */
+const SUM_OPT_LINES = 6;
+let sumOptAll = false;
 function renderSummary(){
   const order = id => [TRIP_DAYS.indexOf(items[id].day), orderOf(id), id];
   const cmp = (a, b) => { const x = order(a), y = order(b); return (x[0] - y[0]) || (x[1] - y[1]) || (x[2] < y[2] ? -1 : 1); };
+  const whenOf = id => { const it = items[id]; return it.altDay ? `${fmtDay(it.day)} / ${fmtDay(it.altDay)}` : fmtDay(it.day); };
   ['booked', 'planned', 'optional'].forEach(st => {
     const ul = document.querySelector(`[data-sum="${st}"]`);
     if (!ul) return;
     ul.textContent = '';
-    Object.keys(items).filter(id => statusOf(id) === st).sort(cmp).forEach(id => {
-      const it = items[id];
-      const when = it.altDay ? `${fmtDay(it.day)} / ${fmtDay(it.altDay)}` : fmtDay(it.day);
-      ul.appendChild(h('li', { 'data-sum-item': id }, h('span', { class: 'mono itin-sumdate', text: when }), h('span', { text: titleOf(id) })));
-    });
+    const ids = Object.keys(items).filter(id => statusOf(id) === st).sort(cmp);
+    if (st === 'optional') renderOptSummary(ul, ids, whenOf);
+    else ids.forEach(id => ul.appendChild(h('li', { 'data-sum-item': id }, h('span', { class: 'mono itin-sumdate', text: whenOf(id) }), h('span', { text: titleOf(id) }))));
     if (!ul.children.length) ul.appendChild(h('li', { class: 'itin-sumempty', text: '—' }));
   });
+}
+function renderOptSummary(ul, ids, whenOf){
+  const box = ul.closest('.sum');
+  const old = box && box.querySelector('.sum-more');
+  if (old) old.remove();
+  ul.classList.add('sum-opt');
+  ul.classList.toggle('all', sumOptAll);
+  const lines = [];
+  ids.forEach(id => {
+    const when = whenOf(id), last = lines[lines.length - 1];
+    if (last && last.when === when) last.ids.push(id);
+    else lines.push({ when, day: items[id].day, ids: [id] });
+  });
+  const today = todayISO();
+  let from = lines.findIndex(l => l.day >= today);
+  if (from < 0) from = lines.length;
+  from = Math.max(0, Math.min(from, lines.length - SUM_OPT_LINES));
+  lines.forEach((l, i) => {
+    const names = h('span', { class: 'sum-names', dir: 'auto' }); // שם לועזי נחתך בסופו, לא בתחילתו
+    l.ids.forEach((id, k) => {
+      if (k) names.appendChild(document.createTextNode(' · '));
+      names.appendChild(h('span', { 'data-sum-item': id, text: titleOf(id) }));
+    });
+    const li = h('li', { class: 'sum-line', title: l.ids.map(titleOf).join(' · '), hidden: !sumOptAll && (i < from || i >= from + SUM_OPT_LINES) },
+      h('span', { class: 'mono itin-sumdate', text: l.when }), names);
+    ul.appendChild(li);
+  });
+  if (lines.length <= SUM_OPT_LINES || !box) return;
+  const btn = h('button', { type: 'button', class: 'sum-more', 'aria-expanded': String(sumOptAll) },
+    sumOptAll ? 'הצג פחות' : `הצג הכל (${ids.length})`);
+  btn.addEventListener('click', () => {
+    sumOptAll = !sumOptAll;
+    renderSummary();
+    const b = box.querySelector('.sum-more');
+    if (b) b.focus({ preventScroll: true });
+  });
+  box.appendChild(btn);
 }
 
 /* כותרת חלק: שורה שלמה ברשת, לא אזור שחרור (אין לה data-day) */
@@ -614,9 +656,36 @@ function applyInert(){
   root.querySelectorAll('[data-bbody]').forEach(b => { b.inert = blocked; });
 }
 
+/* מיקום הגלילה (v1.31): כל render בונה את הלוח מחדש. בדפדפן בלי עיגון גלילה
+   (Safari), או כשמשהו מעל משנה גובה, העמוד קפץ אחרי עריכה/שמירה/הוספה/
+   מחיקה/הזזה. לפני הבנייה מודדים כרטיס-עוגן — היום שבו הפוקוס, אחרת היום
+   הראשון שנראה במסך — ואחריה מחזירים אותו לאותו גובה במסך. */
+function scrollAnchor(root){
+  const key = el => {
+    const c = el && el.closest && el.closest('.itin-day[data-day], [data-cday]');
+    return c ? (c.dataset.cday ? `[data-cday="${c.dataset.cday}"]` : `.itin-day[data-day="${c.dataset.day}"]`) : null;
+  };
+  let sel = root.contains(document.activeElement) ? key(document.activeElement) : null;
+  if (!sel) {
+    const top = [...root.querySelectorAll('.itin-day[data-day], [data-cday]')].find(x => { const r = x.getBoundingClientRect(); return r.height && r.bottom > 0; });
+    sel = key(top);
+  }
+  const el = sel && root.querySelector(sel);
+  return el ? { sel, top: el.getBoundingClientRect().top } : null;
+}
+function restoreAnchor(root, a){
+  if (!a) return;
+  const el = root.querySelector(a.sel);
+  if (!el || !el.getBoundingClientRect().height) return;
+  const d = el.getBoundingClientRect().top - a.top;
+  if (Math.abs(d) >= 1) window.scrollBy(0, d);
+}
+const inView = el => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < window.innerHeight; };
+
 function render(focusSel){
   const root = $('#itin');
   if (!root) return;
+  const anchor = scrollAnchor(root);
   root.textContent = '';
   root.appendChild(renderTools());
   PARTS.forEach(p => {
@@ -631,9 +700,15 @@ function render(focusSel){
     // הפוקוס עובר לבלוק מכווץ (למשל "ליום הבא" מ-12.11 ל-13.11) — פותחים אותו
     const blk = f.closest('[data-bbody]') && f.closest('[data-block]');
     if (blk && !isOpen(blockById(blk.dataset.block))) setOpen(blk.dataset.block, true);
-    f.focus();
   }
   renderListeners.forEach(cb => { try { cb(); } catch (e) { console.error('madrid-trip: itinerary render listener failed', e); } });
+  // אחרי המאגר (בטלפון הוא מעל הלוח ויכול לשנות גובה), לפני הפוקוס
+  restoreAnchor(root, anchor);
+  if (f) {
+    // גלילה רק אם היעד מחוץ למסך, ורק כמה שצריך
+    f.focus({ preventScroll: true });
+    if (!inView(f) && f.scrollIntoView) f.scrollIntoView({ block: 'nearest' });
+  }
 }
 
 function onView(act, id){

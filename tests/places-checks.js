@@ -3,8 +3,7 @@
 
    HOW TO RUN (against scratch docs, never the real ones)
    1. python3 tests/serve-test.py            (places.js    -> state/places_test,
-                                              itinerary.js -> state/itinerary_test,
-                                              dossier.js   -> state/checklist_test)
+                                              itinerary.js -> state/itinerary_test)
    2. Open http://localhost:8000/dossier.html in a Chrome that is signed in.
    3. In the console (or via automation) — each phase reseeds itself:
         const t = await import('/tests/places-checks.js');
@@ -12,6 +11,7 @@
         await t.phasePool();    // collapsed list, categories, add/edit, custom categories
         await t.phaseBoard();   // chips, drag in/out, several days, היינו, delete block, slots
         await t.phaseKind();    // day type guessed from the pool category (v1.30)
+        await t.phaseScroll();  // the open list keeps its scroll after actions (v1.31)
         await t.phaseImport();  // file import: preview, duplicates, nothing overwritten
         await t.phaseFilter();  // "Madrid and around" filter in the import preview
         await t.phaseMap();     // overlay map from a place / a category / a board item
@@ -166,6 +166,37 @@ export async function phaseKind() {
   return finish(r, realBefore);
 }
 
+/* v1.31: the open category scrolls inside the sticky pool (≥760px); every
+   action rebuilt it and threw the list back to its top. */
+export async function phaseScroll() {
+  await guard();
+  const r = reporter();
+  const realBefore = await realSnap();
+  await fresh();
+  const fx = FIXTURE();
+  for (let i = 0; i < 30; i++) fx.places[`p_s${i}`] = { name: `קפה ${String(i).padStart(2, '0')}`, cat: 'cafe', hood: 'Malasaña', note: '', url: '', createdAt: 100 + i, source: 'manual' };
+  await setDoc(pRef(), fx);
+  const A = await open();
+  openCat(A, 'cafe');
+  const body = () => A.qq('#places .pool-body');
+  r.ok('the open category scrolls inside the pool', body().scrollHeight > body().clientHeight + 200, [body().scrollHeight, body().clientHeight]);
+  body().scrollTop = 200;
+  const y0 = body().scrollTop;
+  const pid = A.qa('#places [data-place]').find(x => { const b = body().getBoundingClientRect(), e = x.getBoundingClientRect(); return e.top > b.top + 20 && e.bottom < b.bottom; }).dataset.place;
+  const steps = [];
+  const step = (name, fn) => { fn(); steps.push([name, body() && body().scrollTop]); };
+  step('expand', () => pact(A, 'expand', pid));
+  step('chips', () => pact(A, 'chips', pid));
+  step('add to a day', () => pact(A, 'day', pid, D(20)));
+  step('remove from the day', () => pact(A, 'day', pid, D(20)));
+  step('collapse', () => pact(A, 'expand', pid));
+  r.ok('expand / day chips / add / remove / collapse: the list stays where it was', y0 > 100 && steps.every(([, y]) => Math.abs(y - y0) <= 2), [y0, steps]);
+  pact(A, 'cat', 'food');
+  r.ok('another category opens at its top', body().scrollTop === 0);
+  await waitIdle(A);
+  return finish(r, realBefore);
+}
+
 /* ---------- 1. pure parsing (same module instance as this page) ---------- */
 export async function phaseParse() {
   await guard();
@@ -221,8 +252,8 @@ export async function phasePool() {
   r.ok('loads ready, banner hidden, not inert', A.qq('#placesBanner').hidden && !isInert(A.qq('#places')));
   r.ok('closed by default: one line, no body', !A.qq('#places .pool-body') && A.qq('.pool-toggle').getAttribute('aria-expanded') === 'false');
   r.ok('closed bar shows the count', /4 מקומות/.test(A.qq('.pool-count').textContent), A.qq('.pool-count').textContent);
-  r.ok('closed bar is one calm line (<= 50px)', A.qq('#places').getBoundingClientRect().height <= 50, A.qq('#places').getBoundingClientRect().height);
-  r.ok('sits above the board, inside section 08', A.qq('#plan #places') && (A.qq('#places').compareDocumentPosition(A.qq('#itin')) & 4));
+  r.ok('closed bar is one line, more presence since v1.31 (<= 56px)', A.qq('#places').getBoundingClientRect().height <= 56, A.qq('#places').getBoundingClientRect().height);
+  r.ok('sits above the board, inside section 01', A.qq('#plan #places') && (A.qq('#places').compareDocumentPosition(A.qq('#itin')) & 4));
   r.ok('desktop: sticky, same width as the board', A.w.getComputedStyle(A.qq('#places')).position === 'sticky' && Math.abs(A.qq('#places').getBoundingClientRect().width - A.qq('#itin').getBoundingClientRect().width) < 2);
   pact(A, 'toggle', '');
   const chips = A.qa('.pool-chip[data-pact="cat"]').map(c => c.dataset.id);

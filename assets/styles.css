@@ -127,6 +127,16 @@ nav{
   padding:14px 0 10px;margin:22px 0 0;z-index:9;
   border-bottom:1px solid var(--line);
 }
+/* v1.31: מ-1100px הלוח והמאגר רחבים מעמודת הטקסט, וכרטיסים נראו משני צדי
+   ה-nav הדביק בגלילה. ה-nav של התיק מקבל את אותו רוחב (אותו --bw כמו
+   .pool/.itin), והקישורים נשארים בעמודה בעזרת padding. */
+@media(min-width:1100px){
+  body.p-doc nav{
+    --bw:min(1240px,calc(100vw - 48px));
+    width:var(--bw);margin-left:calc((100% - var(--bw)) / 2);margin-right:calc((100% - var(--bw)) / 2);
+    padding-left:calc((var(--bw) - 100%) / 2);padding-right:calc((var(--bw) - 100%) / 2);
+  }
+}
 nav a{
   display:inline-block;font-size:12.5px;color:var(--slate);
   text-decoration:none;padding:4px 9px;
@@ -193,21 +203,38 @@ td.num{font-family:var(--font-mono);direction:ltr;text-align:left;white-space:no
 .place.bl{border-color:var(--blue)}
 .place.gd{border-color:var(--gold)}
 
-/* ---------- 9. צ'קליסט ---------- */
-.check{display:flex;gap:11px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer}
-.check .bx{
-  flex:none;width:19px;height:19px;margin-top:2px;
-  border:1.5px solid var(--slate);border-radius:var(--radius);
-  background:var(--surface);position:relative;transition:background .15s;
+/* ---------- 9. פרקים מכווצים (v1.31) ----------
+   כל פרק טקסט אחרי הלוח: <section class="fold"> עם <details> — שורה אחת,
+   סגור כברירת מחדל. assets/dossier.js פותח פרק כשלוחצים על הקישור אליו. */
+body.p-doc .folds{margin-top:44px;border-top:1.5px solid var(--ink)}
+body.p-doc section.fold{margin-top:0}
+.fold summary{list-style:none;cursor:pointer;border-radius:var(--radius)}
+.fold summary::-webkit-details-marker,.fold-note summary::-webkit-details-marker{display:none}
+.fold summary:focus-visible,.fold-link:focus-visible,.fold-note summary:focus-visible{outline:2px solid var(--rojo);outline-offset:2px}
+body.p-doc .fold h2,.fold-link{
+  font-size:18px;line-height:1.3;margin:0;padding:13px 2px;
+  border-bottom:1px solid var(--line);
 }
-.check.on .bx{background:var(--ink);border-color:var(--ink)}
-.check.on .bx::after{
-  content:"";position:absolute;inset:3px 4px 5px 4px;
-  border-right:2px solid var(--on-ink);border-bottom:2px solid var(--on-ink);transform:rotate(40deg);
+body.p-doc .fold h2::after{content:'▾';margin-right:auto;font-family:var(--font-mono);font-size:12px;color:var(--slate)}
+.fold summary:hover h2{color:var(--rojo)}
+.fold summary:hover h2::after{color:var(--rojo)}
+body.p-doc .fold details[open] h2{border-bottom:1.5px solid var(--ink);margin-bottom:16px}
+body.p-doc .fold details[open] h2::after{content:'▴'}
+.fold-body{padding-bottom:26px}
+.fold .goal{margin-top:0}
+.fold-link{
+  display:flex;align-items:baseline;gap:11px;
+  font-family:var(--font-display);color:var(--ink);text-decoration:none;
 }
-.check.on .ct{color:var(--slate);text-decoration:line-through}
-.ct{font-size:14.5px;line-height:1.45}
-.ct em{font-style:normal;display:block;font-size:12.5px;color:var(--slate)}
+.fold-link span:last-child{margin-right:auto;font-family:var(--font-mono);font-size:13px;color:var(--slate)}
+.fold-link:hover,.fold-link:hover span:last-child{color:var(--rojo)}
+/* "איך זה עובד" מעל הלוח: שורה קטנה ושקטה */
+.fold-note{margin:-6px 0 12px;font-size:14px}
+.fold-note summary{display:inline-flex;align-items:center;gap:6px;list-style:none;cursor:pointer;font-size:12.5px;color:var(--slate);min-height:32px}
+.fold-note summary::after{content:'▾';font-family:var(--font-mono);font-size:11px}
+.fold-note[open] summary::after{content:'▴'}
+.fold-note summary:hover{color:var(--ink)}
+.fold-note[open] summary{margin-bottom:6px}
 
 /* ---------- 10. מחשבון התקציב ---------- */
 .total-row{display:flex;align-items:baseline;gap:10px;margin-top:6px;flex-wrap:wrap}
@@ -594,6 +621,15 @@ input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var
 .sum-fixed{font-weight:600}
 .sum-open{grid-column:1/-1;display:flex;align-items:center;gap:8px;font-size:13.5px;padding:9px 13px;border:1px dashed var(--st);border-radius:var(--radius)}
 @media(min-width:760px){.itin-summary{grid-template-columns:repeat(3,minmax(0,1fr))}}
+/* אופציונלי צפוף (v1.31): שורה אחת ליום, שמות עם נקודה ביניהם, חיתוך ב-…;
+   "הצג הכל" פותח את כל הימים ומאפשר שבירת שורה */
+.sum-opt li.sum-line{gap:8px;padding:1px 0;margin:0;font-size:12.5px;line-height:1.5;min-width:0}
+.sum-opt .itin-sumdate{min-width:44px;font-size:11.5px}
+.sum-names{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;text-align:right}
+.sum-opt.all .sum-names{white-space:normal}
+.sum-more{margin-top:6px;padding:4px 0;border:0;background:none;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--ink);text-decoration:underline;text-underline-offset:3px;cursor:pointer;min-height:32px}
+.sum-more:hover{color:var(--rojo)}
+.sum-more:focus-visible{outline:2px solid var(--rojo);outline-offset:2px}
 
 /* לינה (פרק 04): הזמנה סגורה / עוד פתוחה, באותו צבע סטטוס כמו בלוח */
 .place.stay{border-right-color:var(--st)}
@@ -602,7 +638,6 @@ input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var
 /* המטרה — בראש התיק */
 .goal{border-color:var(--green);border-right-width:5px;margin-top:22px}
 .goal .tag{color:var(--green)}
-.goal-h{font-family:var(--font-display);font-size:20px;line-height:1.25;margin-bottom:4px}
 .goal-list{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px 18px}
 .goal-list li{position:relative;padding-right:24px;margin:0;font-size:14.5px}
 .goal-list li::before{
@@ -635,13 +670,18 @@ input[type=email]:focus,input[type=password]:focus{outline:none;border-color:var
    מ-760px נדבק מתחת ל-nav בזמן גלילה בלוח, כדי שאפשר יהיה לגרור אליו
    וממנו לכל יום; בטלפון לא נדבק ("הוסף ליום" במקום גרירה). */
 #placesBanner{margin-bottom:10px}
-.pool{margin:0 0 12px;background:var(--paper);border:1px solid var(--line);border-radius:var(--radius)}
+/* v1.31: המאגר בולט גם כשהוא סגור — מסגרת בצבע הדיו עם פס אדום בצד,
+   המספר כתג, ו"פתיחה ▾" ככפתור ברור בקצה השורה (כל השורה לחיצה). */
+.pool{margin:0 0 12px;background:var(--surface);border:1.5px solid var(--ink);border-right:5px solid var(--rojo);border-radius:var(--radius)}
 .pool-bar{display:flex;align-items:center;flex-wrap:wrap;gap:0 14px;padding:0 12px}
-.pool-toggle{display:flex;align-items:baseline;gap:10px;flex:1 1 auto;min-height:44px;padding:0;border:0;background:none;font-family:inherit;color:var(--ink);cursor:pointer;text-align:right}
+.pool-toggle{display:flex;align-items:center;gap:10px;flex:1 1 auto;min-height:50px;padding:0;border:0;background:none;font-family:inherit;color:var(--ink);cursor:pointer;text-align:right}
 .pool-toggle:focus-visible{outline:2px solid var(--rojo);outline-offset:2px}
-.pool-h{font-family:var(--font-display);font-size:17px;line-height:44px}
-.pool-count{font-size:12.5px;color:var(--slate)}
-.pool-chev{font-size:11px;color:var(--slate)}
+.pool-h{font-family:var(--font-display);font-size:20px;line-height:1.2}
+.pool-count{font-family:var(--font-mono);font-size:12px;font-weight:600;line-height:1;padding:4px 8px;border-radius:999px;background:var(--ink);color:var(--on-ink);white-space:nowrap}
+.pool-chev{margin-right:auto;font-size:12.5px;font-weight:600;line-height:1;padding:7px 11px;border:1.5px solid var(--ink);border-radius:var(--radius);background:var(--paper);white-space:nowrap}
+.pool-toggle:hover .pool-chev{background:var(--ink);color:var(--on-ink)}
+.pool.open .pool-chev{border-color:var(--line);color:var(--slate)}
+.pool.open .pool-toggle:hover .pool-chev{background:var(--paper);color:var(--ink);border-color:var(--ink)}
 .pool-tools{display:flex;gap:14px}
 .pool-drophint{display:none}
 .pool.dropzone{border:1.5px dashed var(--rojo)}

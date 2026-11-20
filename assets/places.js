@@ -474,6 +474,10 @@ function render(focusSel){
     else if (a.dataset.cf) focusSel = `[data-cf="${a.dataset.cf}"]`;
     else if (a.dataset.pact) focusSel = `[data-pact="${a.dataset.pact}"][data-id="${a.dataset.id}"]` + (a.dataset.day ? `[data-day="${a.dataset.day}"]` : '');
   }
+  // הרשימה הפתוחה גוללת בתוך עצמה (מ-760px): בנייה מחדש איפסה אותה לראש
+  // אחרי כל פעולה. אותה קטגוריה פתוחה → אותו מקום גלילה (v1.31).
+  const oldBody = root.querySelector('.pool-body');
+  const keepScroll = oldBody && oldBody.dataset.cat === String(openCat || '') ? oldBody.scrollTop : 0;
   root.textContent = '';
   const linkedDrag = board.dragging();
   root.classList.toggle('dropzone', !!(linkedDrag && linkedDrag.placeId));
@@ -483,11 +487,16 @@ function render(focusSel){
     h('button', { type: 'button', class: 'pool-toggle', 'data-pact': 'toggle', 'data-id': '', 'aria-expanded': String(isOpen), 'aria-controls': 'placesBody' },
       h('span', { class: 'pool-h' }, 'המלצות'),
       h('span', { class: 'pool-count' }, n ? countText(n) : 'עוד אין מקומות'),
-      h('span', { class: 'pool-chev', 'aria-hidden': 'true' }, isOpen ? '▴' : '▾')),
+      h('span', { class: 'pool-chev', 'aria-hidden': 'true' }, isOpen ? 'סגירה ▴' : 'פתיחה ▾')),
     h('span', { class: 'pool-drophint', 'aria-hidden': 'true' }, 'שחררו כאן כדי להסיר מהיום — המקום נשאר בהמלצות'));
   if (isOpen) bar.appendChild(h('span', { class: 'pool-tools' }, pBtn('new', '', '＋ מקום', 'הוספת מקום'), pBtn('import', '', 'ייבוא מ-Google', 'ייבוא רשימה מ-Google Takeout')));
   root.appendChild(bar);
-  if (isOpen) root.appendChild(renderBody());
+  if (isOpen) {
+    const body = renderBody();
+    body.dataset.cat = String(openCat || '');
+    root.appendChild(body);
+    if (keepScroll) body.scrollTop = keepScroll;
+  }
   const f = focusSel && root.querySelector(focusSel);
   if (f) f.focus({ preventScroll: true });
 }
@@ -832,10 +841,12 @@ function wire(){
   const nav = document.querySelector('nav');
   const pool = document.getElementById('places');
   const setTop = () => {
-    const top = nav ? nav.offsetHeight : 0;
+    // גובה שבור (60.5px) עוגל למעלה והשאיר פס של חצי פיקסל שדרכו נראו
+    // כרטיסים — מעגלים למטה, וה-nav (z-index גבוה יותר) מכסה את החפיפה
+    const top = nav ? Math.floor(nav.getBoundingClientRect().height) : 0;
     const sticky = pool && getComputedStyle(pool).position === 'sticky';
     document.documentElement.style.setProperty('--pool-top', top + 'px');
-    document.documentElement.style.setProperty('--pool-bottom', (top + (sticky ? pool.offsetHeight : 0)) + 'px');
+    document.documentElement.style.setProperty('--pool-bottom', Math.floor(top + (sticky ? pool.getBoundingClientRect().height : 0)) + 'px');
   };
   setTop();
   window.addEventListener('resize', setTop);

@@ -3,14 +3,14 @@
 
    HOW TO RUN (against a scratch doc, never the real one)
    1. python3 tests/serve-test.py            (itinerary.js -> state/itinerary_test,
-                                              dossier.js  -> state/checklist_test)
+                                              places.js   -> state/places_test)
    2. Open http://localhost:8000/dossier.html in a Chrome that is signed in.
    3. In the console (or via automation) — each phase reseeds itself:
         const t = await import('/tests/itinerary-checks.js');
         await t.phaseMain();     // seed render, colours, edit, move, reorder, drag, add, delete, reload
         await t.phaseGuard();    // another tab/device changed the doc -> refuse to save
         await t.phaseLoad();     // slow/failed load, local fallback, unknown fields kept
-        await t.phaseChecklist(); // the 3 remaining tasks keep their marks (checklist_test)
+        await t.phaseDossier();  // v1.31: board first, folded sections, compact optional, scroll kept
         await t.phaseCollapse(); // blocks of 4: default by date, toggle, remember, drag onto collapsed
         await t.dropTestDoc();   // deletes itinerary_test + the local test copy
    The board's collapse state lives in localStorage (madrid.itinerary.view.test
@@ -47,8 +47,8 @@ const openBlocks = p => p.qa('#itin [data-block]').filter(b => !b.querySelector(
 
 async function guard() {
   const src = await (await fetch('/assets/itinerary.js', { cache: 'no-store' })).text();
-  const chk = await (await fetch('/assets/dossier.js', { cache: 'no-store' })).text();
-  if (!src.includes("'state', 'itinerary_test')") || !chk.includes("'state', 'checklist_test')")) {
+  const pl = await (await fetch('/assets/places.js', { cache: 'no-store' })).text();
+  if (!src.includes("'state', 'itinerary_test')") || !pl.includes("'state', 'places_test')")) {
     throw new Error('dossier scripts are not served by tests/serve-test.py - refusing to run');
   }
   if (!src.includes('__loadDoc(docRef)')) throw new Error('serve-test.py load hook missing - restart the test server');
@@ -186,12 +186,12 @@ export async function phaseMain() {
   r.ok('tile has a big icon and the kind colour', !!A.qq('[data-day="2026-11-03"] .itin-tile svg') && A.w.getComputedStyle(A.qq('[data-day="2026-11-03"] .itin-tile')).color === 'rgb(196, 38, 46)');
   // summary under the board, derived from the items
   const sum = st => A.qa(`[data-sum="${st}"] [data-sum-item]`).map(li => li.dataset.sumItem);
-  r.ok('summary: booked = Onefam line + the three booked items', /1–8\.11.*Onefam.*7 לילות/.test(A.qq('.sum.st-booked .sum-fixed').textContent) && A.qa('.sum.st-booked .sum-fixed').length === 2 && /8–14\.11.*סגור/.test(A.qa('.sum.st-booked .sum-fixed')[1].textContent) && /15–30\.11.*פתוח/.test(A.qq('.sum-open').textContent) && /8–14\.11[\s\S]*סגור[\s\S]*15–30\.11[\s\S]*פתוח/.test(A.qq('#stay').textContent) && !/Workaway|ייקבע במקום/.test(A.qq('#stay').textContent + A.qq('.itin-summary').textContent) && /Onefam[\s\S]*1–8\.11[\s\S]*שולם/.test(A.qq('#stay').textContent) && !/1–14\.11/.test(A.qq('#stay').textContent + A.qq('.itin-summary').textContent) && sum('booked').join() === 'i01,i03,i07', sum('booked'));
+  r.ok('summary: booked = Onefam line + the three booked items; #stay keeps only "where to live"', /1–8\.11.*Onefam.*7 לילות/.test(A.qq('.sum.st-booked .sum-fixed').textContent) && A.qa('.sum.st-booked .sum-fixed').length === 2 && /8–14\.11.*סגור/.test(A.qa('.sum.st-booked .sum-fixed')[1].textContent) && /15–30\.11.*פתוח/.test(A.qq('.sum-open').textContent) && !A.qq('#stay .place') && !/Onefam|BOOKED/.test(A.qq('#stay').textContent) && /צ'מברי/.test(A.qq('#stay').textContent) && !/Workaway|ייקבע במקום/.test(A.qq('#stay').textContent + A.qq('.itin-summary').textContent) && !/1–14\.11/.test(A.qq('#stay').textContent + A.qq('.itin-summary').textContent) && sum('booked').join() === 'i01,i03,i07', sum('booked'));
   r.ok('summary: Barcelona shows both dates', /7\.11 \/ 8\.11/.test(A.qq('[data-sum-item="i07"]').textContent));
   r.ok('summary: planned', sum('planned').join() === 'i02,i04,i05,i06', sum('planned'));
   r.ok('summary: optional incl. Thyssen', sum('optional').join() === 'i09,i10,i11,i11b,i12,i13', sum('optional'));
-  // goal box at the top, the stale "not yet decided" box gone, timeline not built
-  r.ok('goal box at the top', !!A.qq('.box.goal') && A.qq('.box.goal').compareDocumentPosition(A.qq('nav')) === 4 && A.qa('.goal-list li').length === 5);
+  // goal box (folded since v1.31, after the board), the stale "not yet decided" box gone
+  r.ok('goal box folded in #goal, after the board', !!A.qq('#goal details:not([open]) .box.goal') && (A.qq('#plan').compareDocumentPosition(A.qq('#goal')) & 4) && A.qa('.goal-list li').length === 5);
   r.ok('NOT YET DECIDED box removed', !/NOT YET DECIDED/.test(A.w.document.body.textContent));
   r.ok('legend shows the four statuses', A.qa('.itin-legend .st').map(x => x.textContent).join() === 'BOOKED,PLANNED,OPTIONAL,OPEN');
   r.ok('RTL page, Hebrew titles', A.w.document.documentElement.dir === 'rtl' && titleOf(A, 'i01') === 'נחיתה במדריד');
@@ -458,31 +458,117 @@ export async function phaseLoad() {
   return r.result();
 }
 
-export async function phaseChecklist() {
+/* v1.31: the board is the first section after the header, every other text
+   section is one closed line (<details>) that a nav link also opens, 09 and
+   the budget section are gone (one link to the calculator), the OPTIONAL
+   summary is one line per day with "הצג הכל", and edits keep the scroll
+   position even without the browser's own scroll anchoring (Safari). */
+export async function phaseDossier() {
   await guard();
   const r = reporter();
-  const cref = doc(db, 'users', auth.currentUser.uid, 'state', 'checklist_test');
-  const realC = doc(db, 'users', auth.currentUser.uid, 'state', 'checklist');
-  const realBefore = canonJson((await getDoc(realC)).data() || null);
-  // an old positional doc: item6 (Resident Advisor) checked, item0 (account, now deleted) checked
-  await setDoc(cref, { item0: true, item6: true, item7: false });
-  localStorage.removeItem('madrid.checklist.test');
-  const P = await open();
-  await sleep(1500);
-  const checks = P.qa('#todo .check');
-  r.ok('three open tasks left', checks.length === 3 && /ביטוח/.test(checks[0].textContent) && /Resident Advisor/.test(checks[1].textContent) && /לשאר נובמבר/.test(checks[2].textContent) && /15–30\.11/.test(checks[2].textContent) && checks[2].dataset.c === 'night14' && !/Workaway/.test(checks[2].textContent));
-  r.ok('the obsolete flight item is gone', !/לסגור טיסות/.test(P.qq('#todo').textContent));
-  r.ok('existing marks follow their task, not the position', !checks[0].classList.contains('on') && checks[1].classList.contains('on') && !checks[2].classList.contains('on'));
-  checks[2].click();
-  let d; for (let i = 0; i < 20; i++) { await sleep(250); d = (await getDoc(cref)).data(); if (d.night14) break; }
-  r.ok('new task saves under its own key', d.night14 === true && d.item6 === true && d.item0 === true);
-  P.f.remove();
-  const Q = await open(); await sleep(1500);
-  r.ok('reload: marks kept', Q.qa('#todo .check')[2].classList.contains('on') && Q.qa('#todo .check')[1].classList.contains('on'));
-  Q.f.remove();
-  await deleteDoc(cref);
-  localStorage.removeItem('madrid.checklist.test');
-  r.ok('real checklist doc untouched', canonJson((await getDoc(realC)).data() || null) === realBefore);
+  const realBefore = await realSnap();
+  await fresh();
+  const OPT = [[2, 'אופציה 2'], [3, 'קפה א'], [3, 'קפה ב'], [5, 'אופציה 5'], [8, 'אופציה 8'], [10, 'אופציה 10'], [12, 'אופציה 12'], [14, 'אופציה 14'], [15, 'אופציה 15'], [17, 'אופציה 17'], [19, 'אופציה 19'], [20, 'ספא'], [20, 'פארק'], [21, 'אופציה 21'], [24, 'טכנו ארוך מאוד עם שם שלא נכנס בשורה אחת בעמודה צרה'], [26, 'אופציה 26']];
+  const items = { b01: { day: D(1), order: 0, title: 'נחיתה', desc: '', status: 'booked', url: '' },
+    t02: { day: D(2), order: 0, title: 'יום ארוך', desc: 'אחת · שתיים · שלוש · ארבע · חמש · שש · שבע · שמונה', status: 'planned', url: '' },
+    p20: { day: D(20), order: 0, title: 'לעריכה', desc: '', status: 'planned', url: '' } };
+  OPT.forEach(([d, t], i) => { items[`o${i}`] = { day: D(d), order: 5 + i, title: t, desc: '', status: 'optional', url: '' }; });
+  await setDoc(ref(), { items, days: {} });
+  const A = await open();
+
+  // 1. order and numbering
+  const secs = A.qa('section');
+  r.ok('board first: #plan is the first section, right after the nav', secs[0].id === 'plan' && A.qq('nav').nextElementSibling === secs[0] && A.qq('nav a').getAttribute('href') === '#plan');
+  r.ok('numbers 01–08 in order', A.qa('h2 .n').map(n => n.textContent).join() === '01,02,03,04,05,06,07,08', A.qa('h2 .n').map(n => n.textContent));
+  r.ok('nav lists the board + the 7 folded sections, each target exists', A.qa('nav a').map(a => a.getAttribute('href')).join() === '#plan,#goal,#anchor,#when,#hoods,#stay,#night,#techno' && A.qa('nav a').every(a => A.qq(a.getAttribute('href'))));
+  const folds = A.qa('section.fold');
+  r.ok('7 folded sections, all closed by default, each one line (h2 in summary)', folds.length === 7 && folds.every(f => f.querySelector(':scope > details:not([open]) > summary > h2')) && folds.every(f => f.getBoundingClientRect().height < 70), folds.map(f => Math.round(f.getBoundingClientRect().height)));
+  r.ok('09 tasks gone, no checklist anywhere', !A.qq('#todo') && !A.qq('.check') && !/משימות פתוחות/.test(A.w.document.body.textContent));
+  r.ok('budget section gone, exactly one link to the calculator, after the folds', !A.qq('#budget') && A.qa('a[href="budget.html"]').length === 1 && (A.qa('section.fold').pop().compareDocumentPosition(A.qq('a[href="budget.html"]')) & 4) && !/€1,720|פירוט הרמה/.test(A.w.document.body.textContent));
+  r.ok('removed: Almudena from 04, the 8.11 match-day box from 07, booking cards from 06', !/אלמודנה|SIDE EFFECT/.test(A.qq('#when').textContent) && /תאורת חג המולד/.test(A.qq('#when').textContent) && !/MATCH DAY/.test(A.qq('#night').textContent) && /Intercambio/.test(A.qq('#night').textContent) && !A.qq('#stay .place'));
+  r.ok('"איך זה עובד" above the board: closed, holds the how-to text', !!A.qq('#plan > details.fold-note:not([open])') && /גוררים מקום ליום/.test(A.qq('#plan .fold-note').textContent));
+  // 2. opening
+  A.qq('#hoods summary').click();
+  r.ok('click opens a section, the others stay closed', A.qq('#hoods details').open && A.qa('section.fold details[open]').length === 1);
+  A.qq('#hoods summary').click();
+  r.ok('second click closes it', !A.qq('#hoods details').open);
+  A.qq('nav a[href="#night"]').click();
+  await sleep(150);
+  r.ok('a nav link opens its folded section', A.qq('#night details').open && A.qa('section.fold details[open]').length === 1);
+  A.qq('#night summary').click();
+  A.w.dispatchEvent(new A.w.Event('beforeprint'));
+  const printedOpen = A.qa('section.fold details[open]').length === 7 && A.qq('#plan .fold-note').open;
+  A.w.dispatchEvent(new A.w.Event('afterprint'));
+  r.ok('print (PDF export) opens every section, closes them again after', printedOpen && A.qa('section.fold details[open]').length === 0 && !A.qq('#plan .fold-note').open);
+
+  // 3. OPTIONAL summary: one line per day, 6 lines from "today" (14.11 under the test server)
+  const ul = A.qq('[data-sum="optional"]');
+  const lines = () => A.qa('[data-sum="optional"] li.sum-line');
+  const shown = () => lines().filter(l => !l.hidden);
+  const more = () => A.qq('.sum.st-optional .sum-more');
+  r.ok('optional: one line per day (3.11 and 20.11 hold two names)', lines().length === 14 && lines()[1].querySelectorAll('[data-sum-item]').length === 2 && /קפה א · קפה ב/.test(lines()[1].textContent), lines().length);
+  r.ok('optional: 6 lines shown, starting today (14.11)', shown().length === 6 && shown()[0].querySelector('.itin-sumdate').textContent === '14.11' && shown()[5].querySelector('.itin-sumdate').textContent === '21.11', shown().map(l => l.querySelector('.itin-sumdate').textContent));
+  r.ok('optional: every shown line is one line tall', shown().every(l => l.getBoundingClientRect().height < 24), shown().map(l => l.getBoundingClientRect().height));
+  r.ok('optional: "הצג הכל (16)" with aria-expanded=false', more() && more().textContent === 'הצג הכל (16)' && more().getAttribute('aria-expanded') === 'false');
+  const hShort = ul.getBoundingClientRect().height;
+  r.ok('optional list: 6 tight lines (≤ 140px)', hShort <= 140, hShort);
+  more().click();
+  r.ok('הצג הכל: all 14 days, long names wrap, "הצג פחות"', shown().length === 14 && ul.classList.contains('all') && more().textContent === 'הצג פחות' && more().getAttribute('aria-expanded') === 'true' && A.w.document.activeElement === more());
+  more().click();
+  r.ok('הצג פחות: back to 6', shown().length === 6 && more().textContent === 'הצג הכל (16)');
+  const T = await open('today=2026-11-28');
+  r.ok('after the last optional day: the last 6 lines', T.qa('[data-sum="optional"] li.sum-line').filter(l => !l.hidden).map(l => l.querySelector('.itin-sumdate').textContent).join() === '17.11,19.11,20.11,21.11,24.11,26.11');
+  T.f.remove();
+  // the pool bar stands out when closed
+  const bar = A.qq('.pool-toggle'), cs = el => A.w.getComputedStyle(el);
+  r.ok('pool bar: closed, count as a filled tag, "פתיחה ▾" affordance', bar.getAttribute('aria-expanded') === 'false' && A.qq('.pool-chev').textContent === 'פתיחה ▾' && cs(A.qq('.pool-count')).backgroundColor === cs(A.qq('.pool-h')).color && parseFloat(cs(A.qq('#places')).borderRightWidth) >= 4 && parseFloat(cs(A.qq('.pool-h')).fontSize) >= 19);
+
+  // ≥1100px the board is wider than the nav: nothing of it shows beside the stuck nav
+  A.w.scrollTo(0, A.w.scrollY + A.qq(`.itin-day[data-day="${D(9)}"]`).getBoundingClientRect().top - 20);
+  await sleep(100);
+  const nb = A.qq('nav').getBoundingClientRect(), col = A.qq('.wrap').getBoundingClientRect(), ib = A.qq('#itin').getBoundingClientRect();
+  const side = A.w.document.elementFromPoint(col.left - 60, nb.top + nb.height / 2);
+  const links = A.qa('nav a').map(a => a.getBoundingClientRect());
+  r.ok('wide screen: the stuck nav is as wide as the board, nothing beside it; links stay in the text column', nb.top <= 1 && Math.abs(nb.left - ib.left) < 2 && Math.abs(nb.right - ib.right) < 2 && side === A.qq('nav') && links.every(l => l.left >= col.left - 1 && l.right <= col.right + 1) && A.w.document.documentElement.scrollWidth <= A.w.innerWidth, { side: side && (side.className || side.tagName), nb: [nb.left, nb.right], ib: [ib.left, ib.right] });
+
+  // 4. scroll position kept — with the browser's own anchoring switched off
+  A.w.document.documentElement.style.overflowAnchor = 'none';
+  const card = day => A.qq(`.itin-day[data-day="${D(day)}"]`);
+  const at = day => Math.round(card(day).getBoundingClientRect().top);
+  A.w.scrollTo(0, A.w.scrollY + card(20).getBoundingClientRect().top - 320);
+  await sleep(100);
+  const y0 = at(20);
+  const steps = [];
+  // ⋯ stays open after a move, so open it only when its actions are not showing
+  const menu = id => { const m = A.qq(`[data-item="${id}"] .itin-acts`); if (!m || m.hidden) act(A, 'menu', id); };
+  const step = async (name, fn) => { fn(); await sleep(250); steps.push([name, at(20) - y0]); };
+  await step('menu', () => menu('p20'));
+  await step('edit form', () => act(A, 'edit', 'p20'));
+  await step('save', () => { setF(A, 'title', 'נערך'); act(A, 'save', 'p20'); });
+  await step('add', () => act(A, 'add', D(20)));
+  await step('add save', () => { setF(A, 'title', 'חדש'); A.qq('[data-form] [data-act="save"]').click(); });
+  await step('move down', () => { menu('p20'); act(A, 'down', 'p20'); });
+  await step('next day', () => { menu('p20'); act(A, 'next', 'p20'); });
+  await step('delete', () => { menu('o11'); act(A, 'del', 'o11'); act(A, 'delyes', 'o11'); });
+  await step('day edit', () => { act(A, 'dayedit', D(20)); });
+  await step('day save', () => { A.qq('[data-dayform] [data-df="title"]').value = 'יום'; A.qq('[data-dayform] [data-df="title"]').dispatchEvent(new A.w.Event('input', { bubbles: true })); act(A, 'daysave', D(20)); });
+  r.ok('edit / save / add / move / delete / day edit: 20.11 stays where it was on screen', steps.every(([, d]) => Math.abs(d) <= 2), steps);
+  // what Safari did: the page jumps to the top while the board is rebuilt —
+  // simulated here by scrolling to 0 at the first append into the emptied board
+  const root = A.qq('#itin'), append = root.appendChild.bind(root);
+  let jumped = false;
+  root.appendChild = n => { if (!jumped && !root.firstChild) { jumped = true; A.w.scrollTo(0, 0); } return append(n); };
+  const y1 = at(20);
+  act(A, 'add', D(20));
+  await sleep(250);
+  root.appendChild = append;
+  r.ok('a jump to the top during the rebuild is undone', jumped && Math.abs(at(20) - y1) <= 2, [y1, at(20)]);
+  A.qq('[data-form] [data-act="cancel"]').click();
+  await waitIdle(A);
+  A.f.remove();
+
+  await fresh();
+  r.ok('real itinerary doc untouched', (await realSnap()) === realBefore);
   return r.result();
 }
 

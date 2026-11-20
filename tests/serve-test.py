@@ -16,8 +16,7 @@ Usage:  python3 tests/serve-test.py [port]      (default 8000)
 - Exposes window.__budgetIdle() (no save waiting or in flight), which
   readDoc() in tests/budget-checks.js waits on instead of a fixed sleep.
 - Does the same for dossier.html: /assets/itinerary.js -> state/itinerary_test
-  (+ __loadDoc, window.__itinIdle), /assets/dossier.js -> state/checklist_test,
-  and /assets/places.js -> state/places_test (+ __loadDoc on its own query
+  (+ __loadDoc, window.__itinIdle) and /assets/places.js -> state/places_test (+ __loadDoc on its own query
   param, ?placesload=slow|fail, so a failed pool load leaves the board alone;
   window.__placesIdle).
 - Pins "today" in /assets/itinerary.js (which block of the board opens by
@@ -72,11 +71,6 @@ function __testNow(){
         ("'madrid.places.v1'", "'madrid.places.test'"),
         ("getDoc(docRef).then(", "__loadDoc(docRef).then("),
     ], BUDGET_SHIM.replace("__budgetIdle", "__placesIdle").replace("'loadtest'", "'placesload'")),
-    # ...and the checklist on the same page is pointed away from the real doc too
-    "/assets/dossier.js": ([
-        ("'state', 'checklist')", "'state', 'checklist_test')"),
-        ("'madrid.checklist.v1'", "'madrid.checklist.test'"),
-    ], ""),
     # night mode reads a test clock, so the colour assertions in the suites give
     # the same answer whatever the real time is (see tests/night-checks.js)
     "/assets/night.js": ([
