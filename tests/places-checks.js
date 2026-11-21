@@ -32,7 +32,7 @@ const LOCAL = { places: 'madrid.places.test', itinerary: 'madrid.itinerary.test'
 const canonJson = o => JSON.stringify(o, (k, v) => (v && typeof v === 'object' && !Array.isArray(v)) ? Object.fromEntries(Object.keys(v).sort().map(x => [x, v[x]])) : v);
 const isInert = el => !!el && !!el.closest('[inert]');
 const D = n => `2026-11-${String(n).padStart(2, '0')}`;
-// the board's collapse state (localStorage, serve-test.py key): every block open, so all 30 cards are measurable
+// the board's collapse state (localStorage, serve-test.py key): every block open, so all 22 cards are measurable
 const openAllBlocks = () => localStorage.setItem('madrid.itinerary.view.test', JSON.stringify({ open: Object.fromEntries([1, 5, 9, 13, 15, 19, 23, 27].map(n => [D(n), true])) }));
 
 async function guard() {
@@ -144,8 +144,8 @@ export async function phaseKind() {
   const realBefore = await realSnap();
   const item = (day, pid, name) => ({ day, order: 0, status: 'optional', title: name, desc: '', url: '', placeId: pid });
   await fresh({
-    items: { k1: item(D(20), 'p_park', 'Templo de Debod'), k2: item(D(21), 'p_spa', 'Riela'), k3: item(D(22), 'p_mus', 'Sorolla'), k4: item(D(23), 'p_hood', 'Huertas walk'), k5: item(D(24), 'p_park', 'Templo de Debod'), k6: item(D(25), 'p_hola', 'Hola Coffee'), k7: item(D(26), 'p_live', 'Sala Clamores') },
-    days: { [D(24)]: { kind: 'night' } }
+    items: { k1: item(D(16), 'p_park', 'Templo de Debod'), k2: item(D(17), 'p_spa', 'Riela'), k3: item(D(18), 'p_mus', 'Sorolla'), k4: item(D(19), 'p_hood', 'Huertas walk'), k5: item(D(20), 'p_park', 'Templo de Debod'), k6: item(D(21), 'p_hola', 'Hola Coffee'), k7: item(D(22), 'p_live', 'Sala Clamores') },
+    days: { [D(20)]: { kind: 'night' } }
   });
   const fx = FIXTURE();
   Object.assign(fx.places, {
@@ -158,11 +158,11 @@ export async function phaseKind() {
   fx.cats.c_spa = { label: 'ספא וחמאם', createdAt: 11 };
   await setDoc(pRef(), fx);
   const A = await open();
-  for (let i = 0; i < 40 && !A.qq(`[data-day="${D(20)}"] .itin-title`)?.textContent.includes('Templo'); i++) await sleep(150);
+  for (let i = 0; i < 40 && !A.qq(`[data-day="${D(16)}"] .itin-title`)?.textContent.includes('Templo'); i++) await sleep(150);
   const kindOn = n => ([...A.qq(`.itin-day[data-day="${D(n)}"]`).classList].find(c => c.startsWith('k-')) || '').slice(2);
-  r.ok('פארקים -> park, user category "ספא…" -> spa, מוזיאונים -> museum, שכונות -> plazas, מוזיקה -> music', [[20, 'park'], [21, 'spa'], [22, 'museum'], [23, 'plaza'], [26, 'music']].every(([n, k]) => kindOn(n) === k), [20, 21, 22, 23, 26].map(kindOn));
-  r.ok('manual day type wins over the category', kindOn(24) === 'night');
-  r.ok('a category with no mapping (קפה) falls back to "city"', kindOn(25) === 'city');
+  r.ok('פארקים -> park, user category "ספא…" -> spa, מוזיאונים -> museum, שכונות -> plazas, מוזיקה -> music', [[16, 'park'], [17, 'spa'], [18, 'museum'], [19, 'plaza'], [22, 'music']].every(([n, k]) => kindOn(n) === k), [16, 17, 18, 19, 22].map(kindOn));
+  r.ok('manual day type wins over the category', kindOn(20) === 'night');
+  r.ok('a category with no mapping (קפה) falls back to "city"', kindOn(21) === 'city');
   return finish(r, realBefore);
 }
 
@@ -351,11 +351,11 @@ export async function phaseBoard() {
   expand(A, 'cafe', 'p_hola');
   pact(A, 'chips', 'p_hola');
   const dayChips = A.qa('[data-place="p_hola"] .pool-day');
-  r.ok('"הוסף ליום" opens 30 day chips, 15–30.11 marked as the second part', dayChips.length === 30 && dayChips.filter(c => c.classList.contains('after')).map(c => c.dataset.day).join() === Array.from({ length: 16 }, (_, i) => D(15 + i)).join() && A.qa('[data-place="p_hola"] .pool-daypart').length === 1 && A.qq('[data-place="p_hola"] .pool-daypart').nextElementSibling.dataset.day === D(15));
-  pact(A, 'day', 'p_hola', D(27));
-  r.ok('chip in the second part -> placed on 27.11', linkedOn(A, D(27), 'p_hola').length === 1);
-  pact(A, 'day', 'p_hola', D(27));
-  r.ok('tap again removes it from 27.11', linkedOn(A, D(27), 'p_hola').length === 0);
+  r.ok('"הוסף ליום" opens 22 day chips, 15–22.11 marked as the second part', dayChips.length === 22 && dayChips.filter(c => c.classList.contains('after')).map(c => c.dataset.day).join() === Array.from({ length: 8 }, (_, i) => D(15 + i)).join() && /15–22\.11/.test(A.qq('[data-place="p_hola"] .pool-daypart').textContent) && !A.qq(`[data-place="p_hola"] .pool-day[data-day="${D(23)}"]`) && A.qa('[data-place="p_hola"] .pool-daypart').length === 1 && A.qq('[data-place="p_hola"] .pool-daypart').nextElementSibling.dataset.day === D(15));
+  pact(A, 'day', 'p_hola', D(22));
+  r.ok('chip in the second part -> placed on 22.11', linkedOn(A, D(22), 'p_hola').length === 1);
+  pact(A, 'day', 'p_hola', D(22));
+  r.ok('tap again removes it from 22.11', linkedOn(A, D(22), 'p_hola').length === 0);
   pact(A, 'day', 'p_hola', D(3));
   pact(A, 'day', 'p_hola', D(9));
   r.ok('chip -> placed on 3.11 and 9.11', linkedOn(A, D(3), 'p_hola').length === 1 && linkedOn(A, D(9), 'p_hola').length === 1);
@@ -650,7 +650,7 @@ export async function phaseMobile() {
   expand(M, 'cafe', 'p_hola');
   pact(M, 'chips', 'p_hola');
   const chips = M.qa('[data-place="p_hola"] .pool-day');
-  r.ok('phone: 30 day chips, each >= 40px tall and >= 36px wide', chips.length === 30 && chips.every(c => c.getBoundingClientRect().height >= 40 && c.getBoundingClientRect().width >= 36), chips.map(c => Math.round(c.getBoundingClientRect().width)));
+  r.ok('phone: 22 day chips, each >= 40px tall and >= 36px wide', chips.length === 22 && chips.every(c => c.getBoundingClientRect().height >= 40 && c.getBoundingClientRect().width >= 36), chips.map(c => Math.round(c.getBoundingClientRect().width)));
   r.ok('phone: no horizontal page scroll with the pool open', M.w.document.documentElement.scrollWidth <= M.w.innerWidth, [M.w.document.documentElement.scrollWidth, M.w.innerWidth]);
   pact(M, 'day', 'p_hola', D(2));
   r.ok('phone: tap places it', linkedOn(M, D(2), 'p_hola').length === 1);

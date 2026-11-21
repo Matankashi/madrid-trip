@@ -15,7 +15,7 @@
         await t.dropTestDoc();   // deletes itinerary_test + the local test copy
    The board's collapse state lives in localStorage (madrid.itinerary.view.test
    under serve-test.py). open() opens every block first unless told otherwise,
-   so the layout/drag checks see all 30 cards; "today" is pinned to 14.11
+   so the layout/drag checks see all 22 cards; "today" is pinned to 14.11
    (?today=YYYY-MM-DD overrides).
    Every phase returns {passed, failed, failures:[...]} and checks at the end
    that the real state/itinerary doc is byte-identical to before (read only).
@@ -32,7 +32,7 @@ const canonJson = o => JSON.stringify(o, (k, v) => (v && typeof v === 'object' &
 const isInert = el => !!el && !!el.closest('[inert]');
 const D = n => `2026-11-${String(n).padStart(2, '0')}`;
 const VIEW_KEY = 'madrid.itinerary.view.test';
-const BLOCK_IDS = [1, 5, 9, 13, 15, 19, 23, 27].map(D);
+const BLOCK_IDS = [1, 5, 9, 13, 15, 19].map(D);
 // view: 'all' = every block open, 'none' = all collapsed, null = leave what is stored (or nothing = default)
 function setView(view) {
   if (view === null) return;
@@ -131,19 +131,19 @@ export async function phaseMain() {
   // 1. first load, no doc: the seed itinerary, read straight from code
   const A = await open();
   r.ok('loads ready', A.qq('#itinBanner').hidden && cardsFree(A), A.qq('#itinBanner').textContent);
-  r.ok('30 day blocks, 1.11 to 30.11', A.qa('.itin-day').length === 30 && A.qq('.itin-day .itin-date').textContent === '1.11' && A.qa('.itin-date').pop().textContent === '30.11');
+  r.ok('22 day cards, 1.11 to 22.11 (flying home), nothing after', A.qa('.itin-day').length === 22 && A.qq('.itin-day .itin-date').textContent === '1.11' && A.qa('.itin-date').pop().textContent === '22.11' && !A.qq(`[data-day="${D(23)}"]`) && !A.qq('.itin-other'));
   r.ok('14 items (Thyssen on 11.11) + one alt occurrence', A.qa('[data-item]').length === 14 && mainIds(A, D(11)).join() === 'i11,i11b' && A.qq('[data-item="i11b"]').classList.contains('st-optional') && A.qa('[data-alt]').length === 1);
-  r.ok('weekday: 1.11 Sunday, 14.11 Saturday, 30.11 Monday', A.qq('.itin-wd').textContent === 'יום א׳' && A.qq(`[data-day="${D(14)}"] .itin-wd`).textContent === 'יום ש׳' && A.qa('.itin-wd').pop().textContent === 'יום ב׳');
-  // two parts: 1–14.11 the holiday, 15–30.11 what comes after
+  r.ok('weekday: 1.11 Sunday, 14.11 Saturday, 22.11 Sunday', A.qq('.itin-wd').textContent === 'יום א׳' && A.qq(`[data-day="${D(14)}"] .itin-wd`).textContent === 'יום ש׳' && A.qa('.itin-wd').pop().textContent === 'יום א׳');
+  // two parts: 1–14.11 and 15–22.11 (the board ends with the flight home)
   const parts = A.qa('#itin > .itin-part');
-  r.ok('parts: two headings, right before 1.11 and 15.11', parts.length === 2 && parts[0].nextElementSibling.dataset.block === D(1) && parts[1].nextElementSibling.dataset.block === D(15) && parts[1].previousElementSibling.dataset.block === D(13) && A.qa(`[data-block="${D(13)}"] .itin-day`).pop().dataset.day === D(14) && /^חלק א׳/.test(parts[0].textContent) && /1–14\.11/.test(parts[0].textContent) && /^חלק ב׳/.test(parts[1].textContent) && /15–30\.11/.test(parts[1].textContent) && !/Workaway|החופשה/.test(parts[0].textContent + parts[1].textContent));
+  r.ok('parts: two headings, right before 1.11 and 15.11', parts.length === 2 && parts[0].nextElementSibling.dataset.block === D(1) && parts[1].nextElementSibling.dataset.block === D(15) && parts[1].previousElementSibling.dataset.block === D(13) && A.qa(`[data-block="${D(13)}"] .itin-day`).pop().dataset.day === D(14) && /^חלק א׳/.test(parts[0].textContent) && /1–14\.11/.test(parts[0].textContent) && /^חלק ב׳/.test(parts[1].textContent) && /15–22\.11/.test(parts[1].textContent) && !/Workaway|החופשה/.test(parts[0].textContent + parts[1].textContent));
   r.ok('parts: headings span the whole row and are not drop targets', parts.every(p => !p.dataset.day && Math.abs(p.getBoundingClientRect().width - A.qq('#itin').getBoundingClientRect().width) < 2));
   const after = A.qa('.itin-day.after').map(e => e.dataset.day);
-  r.ok('parts: exactly 15–30.11 marked as the second part', after.length === 16 && after[0] === D(15) && after[15] === D(30));
+  r.ok('parts: exactly 15–22.11 marked as the second part', after.length === 8 && after[0] === D(15) && after[7] === D(22));
   const bg = day => A.w.getComputedStyle(A.qq(`[data-day="${D(day)}"]`)).backgroundColor;
   const bs = day => A.w.getComputedStyle(A.qq(`[data-day="${D(day)}"]`)).borderTopStyle;
   r.ok('parts: second part has its own tone (paper + dashed), first part unchanged', bg(15) !== bg(14) && bg(15) === A.w.getComputedStyle(A.w.document.body).backgroundColor && bs(15) === 'dashed' && bs(14) === 'solid', [bg(14), bg(15), bs(14), bs(15)]);
-  r.ok('parts: 15.11–30.11 cards have the same parts as 1–14 (✎, tile, list, add)', [15, 22, 30].every(n => A.qq(`[data-act="dayedit"][data-id="${D(n)}"]`) && A.qq(`[data-day="${D(n)}"] .itin-tile`) && A.qq(`[data-list="${D(n)}"]`) && A.qq(`[data-act="add"][data-id="${D(n)}"]`)));
+  r.ok('parts: 15.11–22.11 cards have the same parts as 1–14 (✎, tile, list, add)', [15, 18, 22].every(n => A.qq(`[data-act="dayedit"][data-id="${D(n)}"]`) && A.qq(`[data-day="${D(n)}"] .itin-tile`) && A.qq(`[data-list="${D(n)}"]`) && A.qq(`[data-act="add"][data-id="${D(n)}"]`)));
   r.ok('Barcelona: one item, on 7.11 and as an alt on 8.11', mainIds(A, D(7)).join() === 'i07' && altIds(A, D(8)).join() === 'i07' && mainIds(A, D(8)).length === 0);
   r.ok('Barcelona: marked as an unresolved date', /7\.11 או 8\.11/.test(A.qq('[data-item="i07"] .itin-tbd').textContent));
   const colour = id => A.w.getComputedStyle(A.qq(`[data-item="${id}"] .itin-badge`)).color;
@@ -159,11 +159,11 @@ export async function phaseMain() {
   r.ok('bullets + icons: Reina Sofía music, Techno headphones, Open day', icons('i11').join() === '•,•,note' && icons('i13').join() === 'headphones' && icons('i14').join() === 'cup,search,plane', [icons('i11'), icons('i13'), icons('i14')]);
   r.ok('8.11 card: "or match day", match if not on 7.11, free time', /או יום משחק/.test(A.qq('[data-alt="i07"] .itin-title').textContent) && A.qa('[data-alt="i07"] .itin-points li').map(li => li.textContent).join('|') === 'יום משחק (אם לא ב-7.11)|זמן חופשי');
   // layout: blocks of 4 per part, 4 across on desktop, wider than the text
-  // column — 1–4, 5–8, 9–12, 13–14 | 15–18 … 27–30
+  // column — 1–4, 5–8, 9–12, 13–14 | 15–18, 19–22
   const tops = P => [...new Set(P.qa('.itin-day').map(d => Math.round(d.getBoundingClientRect().top)))];
   const firstRow = P => P.qa('.itin-day').filter(d => Math.round(d.getBoundingClientRect().top) === tops(P)[0]).length;
   const perRow = P => tops(P).map(t => P.qa('.itin-day').filter(d => Math.round(d.getBoundingClientRect().top) === t).length);
-  r.ok('desktop: blocks of 4 — 4,4,4,2 then 4,4,4,4', perRow(A).join() === '4,4,4,2,4,4,4,4' && Math.round(A.qq(`[data-day="${D(15)}"]`).getBoundingClientRect().top) > Math.round(A.qq('#itin > .itin-part.after').getBoundingClientRect().bottom) - 1, perRow(A));
+  r.ok('desktop: blocks of 4 — 4,4,4,2 then 4,4', perRow(A).join() === '4,4,4,2,4,4' && Math.round(A.qq(`[data-day="${D(15)}"]`).getBoundingClientRect().top) > Math.round(A.qq('#itin > .itin-part.after').getBoundingClientRect().bottom) - 1, perRow(A));
   r.ok('desktop: board breaks out of the 780px text column', A.qq('#itin').getBoundingClientRect().width > 1100, A.qq('#itin').getBoundingClientRect().width);
   r.ok('desktop: RTL — 1.11 is the right-most card', A.qq('[data-day="2026-11-01"]').getBoundingClientRect().right > A.qq('[data-day="2026-11-04"]').getBoundingClientRect().right);
   r.ok('desktop: no horizontal page scroll', A.w.document.documentElement.scrollWidth <= A.w.innerWidth);
@@ -180,7 +180,7 @@ export async function phaseMain() {
   }
   // poster tiles: a colour + icon per day type, guessed from the content
   const kinds = A.qa('.itin-day').map(d => [...d.classList].find(c => c.startsWith('k-')).slice(2));
-  r.ok('tile kind per day', kinds.join() === 'arrival,city,football,museum,daytrip,museum,football,football,city,daytrip,museum,park,night,open' + ',open'.repeat(16), kinds);
+  r.ok('tile kind per day', kinds.join() === 'arrival,city,football,museum,daytrip,museum,football,football,city,daytrip,museum,park,night,open' + ',open'.repeat(8), kinds);
   r.ok('≥760px: part heading sticks right under the sticky pool', A.w.getComputedStyle(A.qq('.itin-part')).position === 'sticky' && A.w.getComputedStyle(A.qq('.itin-part')).top === A.w.getComputedStyle(A.w.document.documentElement).getPropertyValue('--pool-bottom').trim() && parseFloat(A.w.getComputedStyle(A.w.document.documentElement).getPropertyValue('--pool-bottom')) > parseFloat(A.w.getComputedStyle(A.w.document.documentElement).getPropertyValue('--pool-top')));
   r.ok('2.11 stays "city" although its description mentions פארק רטירו (new types read titles only)', A.qq(`[data-day="${D(2)}"]`).classList.contains('k-city'));
   r.ok('tile has a big icon and the kind colour', !!A.qq('[data-day="2026-11-03"] .itin-tile svg') && A.w.getComputedStyle(A.qq('[data-day="2026-11-03"] .itin-tile')).color === 'rgb(196, 38, 46)');
@@ -207,7 +207,7 @@ export async function phaseMain() {
   r.ok('the card being edited spans the whole row', A.qq(`[data-day="${D(2)}"]`).getBoundingClientRect().width > 1000);
   r.ok('edit opens a form with the current values', A.qq('[data-form="i02"] [data-f="title"]').value === 'מגלים את מדריד' && A.qq('[data-form="i02"] [data-f="status"]').value === 'planned');
   const groups = A.qa('[data-form="i02"] [data-f="day"] optgroup');
-  r.ok('day picker: 30 days in two groups (14 + 16)', groups.length === 2 && groups[0].children.length === 14 && groups[1].children.length === 16 && /^חלק ב׳/.test(groups[1].label) && /15–30\.11/.test(groups[1].label) && A.qq('[data-form="i02"] [data-f="day"]').value === D(2));
+  r.ok('day picker: 22 days in two groups (14 + 8)', groups.length === 2 && groups[0].children.length === 14 && groups[1].children.length === 8 && /^חלק ב׳/.test(groups[1].label) && /15–22\.11/.test(groups[1].label) && A.qq('[data-form="i02"] [data-f="day"]').value === D(2));
   setF(A, 'title', 'בדיקה: רטירו'); setF(A, 'desc', 'תיאור בדיקה'); setF(A, 'status', 'optional'); setF(A, 'url', 'example.com/x');
   act(A, 'save', 'i02');
   r.ok('saved card shows the new values', titleOf(A, 'i02') === 'בדיקה: רטירו' && A.qq('[data-item="i02"]').classList.contains('st-optional') && A.qq('[data-item="i02"] .itin-badge').textContent === 'OPTIONAL' && A.qq('[data-item="i02"] .itin-points li').textContent === 'תיאור בדיקה' && A.qq('[data-item="i02"] .itin-link').href === 'https://example.com/x' && A.qq('[data-item="i02"] .itin-link').target === '_blank');
@@ -246,12 +246,12 @@ export async function phaseMain() {
   r.ok('no previous day on 1.11; 14.11 has a next day now', A.qq('[data-act="prev"][data-id="i01"]').disabled && !A.qq('[data-act="next"][data-id="i14"]').disabled);
   act(A, 'next', 'i14');
   r.ok('across the parts: 14.11 -> 15.11 with "ליום הבא"', mainIds(A, D(15)).join() === 'i14' && mainIds(A, D(14)).length === 0);
-  drag(A, 'i14', A.qq(`[data-list="${D(30)}"]`), 'bottom');
-  r.ok('drag onto 30.11; no next day there', mainIds(A, D(30)).join() === 'i14' && A.qq('[data-act="next"][data-id="i14"]').disabled && !A.qq('[data-act="prev"][data-id="i14"]').disabled);
-  d = await docWhen(x => x.items.i14.day === D(30));
-  r.ok('a day in the second part persists', d && d.items.i14.day === D(30) && d.items.i14.order === 0);
+  drag(A, 'i14', A.qq(`[data-list="${D(22)}"]`), 'bottom');
+  r.ok('drag onto 22.11; no next day there', mainIds(A, D(22)).join() === 'i14' && A.qq('[data-act="next"][data-id="i14"]').disabled && !A.qq('[data-act="prev"][data-id="i14"]').disabled);
+  d = await docWhen(x => x.items.i14.day === D(22));
+  r.ok('a day in the second part persists', d && d.items.i14.day === D(22) && d.items.i14.order === 0);
   drag(A, 'i14', A.qq(`[data-list="${D(14)}"]`), 'bottom');
-  r.ok('and back to 14.11', mainIds(A, D(14)).join() === 'i14' && mainIds(A, D(30)).length === 0);
+  r.ok('and back to 14.11', mainIds(A, D(14)).join() === 'i14' && mainIds(A, D(22)).length === 0);
   r.ok('move buttons are labelled', /העברת "רטירו" ליום הבא/.test(A.qq('[data-act="next"][data-id="i02"]').getAttribute('aria-label')));
   d = await docWhen(x => x.items.i02.day === D(9) && x.items.i02.order === 1);
   r.ok('moves persisted with renumbered order', d && d.items.i09.order === 0 && d.items.i02.order === 1 && d.items.i10.order === 0, d && [d.items.i09, d.items.i02]);
@@ -307,16 +307,16 @@ export async function phaseMain() {
   const opts = (act(A, 'dayedit', D(20)), A.qa(`[data-dayform="${D(20)}"] [data-df="kind"] option`).map(o => o.value));
   r.ok('day editor lists 13 types + automatic, new ones included', opts.length === 14 && ['departure', 'spa', 'park', 'plaza', 'errand', 'music'].every(k => opts.includes(k)), opts);
   act(A, 'daycancel', D(20));
-  const typed = [[20, 'DNI Apply', 'errand'], [21, 'טיסה חזרה', 'departure'], [22, 'Riela Bathhouse', 'spa'], [23, 'פארק מדריד ריו', 'park'], [24, 'Plaza Mayor', 'plaza'], [25, 'חדר חזרות והופעה', 'music'], [26, 'נחיתה שנייה', 'arrival']];
+  const typed = [[16, 'DNI Apply', 'errand'], [17, 'טיסה חזרה', 'departure'], [18, 'Riela Bathhouse', 'spa'], [19, 'פארק מדריד ריו', 'park'], [20, 'Plaza Mayor', 'plaza'], [21, 'חדר חזרות והופעה', 'music'], [22, 'נחיתה שנייה', 'arrival']];
   typed.forEach(([n, t]) => { act(A, 'dayedit', D(n)); setDF('title', t); act(A, 'daysave', D(n)); });
   r.ok('day title drives the guess on an empty day', typed.every(([n, , k]) => kindOn(n) === k), typed.map(([n]) => kindOn(n)));
   r.ok('new types: tile icon + own tint', typed.slice(0, 6).every(([n]) => !!A.qq(`[data-day="${D(n)}"] .itin-tile svg`)) && new Set(typed.slice(0, 6).map(([n]) => A.w.getComputedStyle(A.qq(`[data-day="${D(n)}"] .itin-tile`)).color)).size === 6);
-  act(A, 'dayedit', D(22));
-  r.ok('automatic option names the guess', /אוטומטי \(ספא \/ רוגע\)/.test(A.qq(`[data-dayform="${D(22)}"] [data-df="kind"] option`).textContent));
-  setDF('kind', 'museum'); act(A, 'daysave', D(22));
-  r.ok('manual choice beats the guess', kindOn(22) === 'museum');
-  d = await docWhen(x => x.days && x.days[D(22)] && x.days[D(22)].kind === 'museum');
-  r.ok('manual kind persisted, guessed kinds are not', d && d.days[D(22)].kind === 'museum' && [20, 21, 23, 24, 25].every(n => !d.days[D(n)].kind), d && d.days);
+  act(A, 'dayedit', D(18));
+  r.ok('automatic option names the guess', /אוטומטי \(ספא \/ רוגע\)/.test(A.qq(`[data-dayform="${D(18)}"] [data-df="kind"] option`).textContent));
+  setDF('kind', 'museum'); act(A, 'daysave', D(18));
+  r.ok('manual choice beats the guess', kindOn(18) === 'museum');
+  d = await docWhen(x => x.days && x.days[D(18)] && x.days[D(18)].kind === 'museum');
+  r.ok('manual kind persisted, guessed kinds are not', d && d.days[D(18)].kind === 'museum' && [16, 17, 19, 20, 21].every(n => !d.days[D(n)].kind), d && d.days);
   typed.forEach(([n]) => { act(A, 'dayedit', D(n)); setDF('title', ''); setDF('kind', ''); act(A, 'daysave', D(n)); });
   d = await docWhen(x => x.days && typed.every(([n]) => !x.days[D(n)]));
   r.ok('cleared again', d && typed.every(([n]) => !d.days[D(n)] && kindOn(n) === 'open'), d && d.days);
@@ -472,7 +472,7 @@ export async function phaseDossier() {
   const r = reporter();
   const realBefore = await realSnap();
   await fresh();
-  const OPT = [[2, 'אופציה 2'], [3, 'קפה א'], [3, 'קפה ב'], [5, 'אופציה 5'], [8, 'אופציה 8'], [10, 'אופציה 10'], [12, 'אופציה 12'], [14, 'אופציה 14'], [15, 'אופציה 15'], [17, 'אופציה 17'], [19, 'אופציה 19'], [20, 'ספא'], [20, 'פארק'], [21, 'אופציה 21'], [24, 'טכנו ארוך מאוד עם שם שלא נכנס בשורה אחת בעמודה צרה'], [26, 'אופציה 26']];
+  const OPT = [[2, 'אופציה 2'], [3, 'קפה א'], [3, 'קפה ב'], [5, 'אופציה 5'], [8, 'אופציה 8'], [10, 'אופציה 10'], [12, 'אופציה 12'], [14, 'אופציה 14'], [15, 'אופציה 15'], [17, 'אופציה 17'], [19, 'אופציה 19'], [20, 'ספא'], [20, 'פארק'], [21, 'אופציה 21'], [18, 'טכנו ארוך מאוד עם שם שלא נכנס בשורה אחת בעמודה צרה'], [22, 'אופציה 22']];
   const items = { b01: { day: D(1), order: 0, title: 'נחיתה', desc: '', status: 'booked', url: '' },
     t02: { day: D(2), order: 0, title: 'יום ארוך', desc: 'אחת · שתיים · שלוש · ארבע · חמש · שש · שבע · שמונה', status: 'planned', url: '' },
     p20: { day: D(20), order: 0, title: 'לעריכה', desc: '', status: 'planned', url: '' } };
@@ -511,7 +511,7 @@ export async function phaseDossier() {
   const shown = () => lines().filter(l => !l.hidden);
   const more = () => A.qq('.sum.st-optional .sum-more');
   r.ok('optional: one line per day (3.11 and 20.11 hold two names)', lines().length === 14 && lines()[1].querySelectorAll('[data-sum-item]').length === 2 && /קפה א · קפה ב/.test(lines()[1].textContent), lines().length);
-  r.ok('optional: 6 lines shown, starting today (14.11)', shown().length === 6 && shown()[0].querySelector('.itin-sumdate').textContent === '14.11' && shown()[5].querySelector('.itin-sumdate').textContent === '21.11', shown().map(l => l.querySelector('.itin-sumdate').textContent));
+  r.ok('optional: 6 lines shown, starting today (14.11)', shown().length === 6 && shown()[0].querySelector('.itin-sumdate').textContent === '14.11' && shown()[5].querySelector('.itin-sumdate').textContent === '20.11', shown().map(l => l.querySelector('.itin-sumdate').textContent));
   r.ok('optional: every shown line is one line tall', shown().every(l => l.getBoundingClientRect().height < 24), shown().map(l => l.getBoundingClientRect().height));
   r.ok('optional: "הצג הכל (16)" with aria-expanded=false', more() && more().textContent === 'הצג הכל (16)' && more().getAttribute('aria-expanded') === 'false');
   const hShort = ul.getBoundingClientRect().height;
@@ -521,7 +521,7 @@ export async function phaseDossier() {
   more().click();
   r.ok('הצג פחות: back to 6', shown().length === 6 && more().textContent === 'הצג הכל (16)');
   const T = await open('today=2026-11-28');
-  r.ok('after the last optional day: the last 6 lines', T.qa('[data-sum="optional"] li.sum-line').filter(l => !l.hidden).map(l => l.querySelector('.itin-sumdate').textContent).join() === '17.11,19.11,20.11,21.11,24.11,26.11');
+  r.ok('after the last optional day: the last 6 lines', T.qa('[data-sum="optional"] li.sum-line').filter(l => !l.hidden).map(l => l.querySelector('.itin-sumdate').textContent).join() === '17.11,18.11,19.11,20.11,21.11,22.11');
   T.f.remove();
   // the pool bar stands out when closed
   const bar = A.qq('.pool-toggle'), cs = el => A.w.getComputedStyle(el);
@@ -589,7 +589,7 @@ export async function phaseCollapse() {
 
   // 1. default, nothing stored: only the block with today (14.11) is open
   let A = await open('', true, 1300, 'clear');
-  r.ok('8 blocks: 1–4, 5–8, 9–12, 13–14 | 15–18 … 27–30', A.qa('#itin [data-block]').map(b => b.dataset.block).join() === BLOCK_IDS.join() && A.qa(`[data-block="${D(13)}"] .itin-day`).length === 2 && A.qa(`[data-block="${D(27)}"] .itin-day`).length === 4);
+  r.ok('6 blocks: 1–4, 5–8, 9–12, 13–14 | 15–18, 19–22', A.qa('#itin [data-block]').map(b => b.dataset.block).join() === BLOCK_IDS.join() && A.qa(`[data-block="${D(13)}"] .itin-day`).length === 2 && A.qa(`[data-block="${D(19)}"] .itin-day`).length === 4 && /^19–22\.11/.test(head(A, D(19)).textContent));
   r.ok('headers: range + days + items', /^13–14\.11/.test(head(A, D(13)).textContent) && /2 ימים · 2 פריטים/.test(head(A, D(13)).textContent) && /4 ימים · אין פריטים/.test(head(A, D(15)).textContent), head(A, D(13)).textContent);
   r.ok('default: only 13–14 (today) open, past blocks collapsed', openBlocks(A).join() === D(13) && head(A, D(13)).getAttribute('aria-expanded') === 'true' && head(A, D(1)).getAttribute('aria-expanded') === 'false');
   r.ok('today\'s block says so', /היום/.test(head(A, D(13)).textContent) && !/היום/.test(head(A, D(1)).textContent));
@@ -620,7 +620,7 @@ export async function phaseCollapse() {
   A.f.remove();
 
   // 3. default by date
-  for (const [today, want] of [['2026-11-20', D(19)], ['2026-11-30', D(27)], ['2026-11-01', D(1)], ['2026-10-20', D(1)], ['2026-12-05', '']]) {
+  for (const [today, want] of [['2026-11-20', D(19)], ['2026-11-22', D(19)], ['2026-11-23', ''], ['2026-11-30', ''], ['2026-11-01', D(1)], ['2026-10-20', D(1)], ['2026-12-05', '']]) {
     const P = await open(`today=${today}`, true, 1300, 'clear');
     r.ok(`default on ${today}: ${want || 'nothing'} open`, openBlocks(P).join() === want, openBlocks(P));
     P.f.remove();
@@ -629,9 +629,9 @@ export async function phaseCollapse() {
   // 4. expand all / collapse all, the line opens its block
   A = await open('', true, 1300, 'clear');
   A.qq('#itin [data-bact="all"][data-id="open"]').click();
-  r.ok('expand all: 8 open, all 30 cards visible', openBlocks(A).length === 8 && A.qa('.itin-day').every(d => d.offsetParent) && Object.values(storedView()).filter(Boolean).length === 8);
+  r.ok('expand all: 6 open, all 22 cards visible', openBlocks(A).length === 6 && A.qa('.itin-day').every(d => d.offsetParent) && Object.values(storedView()).filter(Boolean).length === 6);
   A.qq('#itin [data-bact="all"][data-id="close"]').click();
-  r.ok('collapse all: none open (today\'s too), 30 lines', openBlocks(A).length === 0 && A.qa('#itin [data-cday]').filter(x => x.offsetParent).length === 30 && Object.values(storedView()).every(v => v === false));
+  r.ok('collapse all: none open (today\'s too), 22 lines', openBlocks(A).length === 0 && A.qa('#itin [data-cday]').filter(x => x.offsetParent).length === 22 && Object.values(storedView()).every(v => v === false));
   line(A, D(10)).click();
   r.ok('tapping the 10.11 line opens 9–12.11', openBlocks(A).join() === D(9) && A.w.document.activeElement === head(A, D(9)));
   await sleep(1200);
@@ -695,7 +695,7 @@ export async function phaseCollapse() {
   // 9. phone: one column, thumb-sized headers and lines, no sideways scroll
   const M = await open('', true, 390, 'clear');
   const visLines = M.qa('#itin [data-cday]').filter(x => x.offsetParent);
-  r.ok('phone: one line per row', visLines.length === 28 && [...new Set(M.qa(`[data-compact="${D(1)}"] [data-cday]`).map(x => Math.round(x.getBoundingClientRect().left)))].length === 1);
+  r.ok('phone: one line per row (22 days, 13–14 open)', visLines.length === 20 && [...new Set(M.qa(`[data-compact="${D(1)}"] [data-cday]`).map(x => Math.round(x.getBoundingClientRect().left)))].length === 1);
   r.ok('phone: lines and headers >= 44px tall, full width', visLines.every(x => x.getBoundingClientRect().height >= 44 && x.getBoundingClientRect().width > 300) && M.qa('#itin [data-bhead]').every(x => x.getBoundingClientRect().height >= 44), visLines.map(x => Math.round(x.getBoundingClientRect().height)).slice(0, 4));
   r.ok('phone: expand/collapse all are tappable (>= 36px)', M.qa('#itin [data-bact="all"]').every(x => x.getBoundingClientRect().height >= 36));
   r.ok('phone: no horizontal page scroll', M.w.document.documentElement.scrollWidth <= M.w.innerWidth);

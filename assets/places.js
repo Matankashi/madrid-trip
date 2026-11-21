@@ -376,7 +376,7 @@ function renderDetail(id, on){
     const onDays = on.map(x => x.day);
     const chips = h('div', { class: 'pool-days', role: 'group', 'aria-label': `ימים עבור "${name}"` });
     board.days().forEach((day, i, all) => {
-      if (i && board.isAfter(day) && !board.isAfter(all[i - 1])) chips.appendChild(h('span', { class: 'pool-daypart', 'aria-hidden': 'true' }, 'חלק ב׳ · ', h('span', { class: 'mono', text: '15–30.11' })));
+      if (i && board.isAfter(day) && !board.isAfter(all[i - 1])) chips.appendChild(h('span', { class: 'pool-daypart', 'aria-hidden': 'true' }, 'חלק ב׳ · ', h('span', { class: 'mono', text: '15–22.11' })));
       chips.appendChild(h('button', {
       type: 'button', class: 'pool-day' + (board.isAfter(day) ? ' after' : ''), 'data-pact': 'day', 'data-id': id, 'data-day': day,
       'aria-pressed': String(onDays.includes(day)), disabled: !board.ready(),
