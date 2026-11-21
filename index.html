@@ -22,11 +22,11 @@
     <div class="stub-body">
       <div class="eyebrow">MADRID · NOV 2026 · SOLO</div>
       <h1>מדריד, נובמבר 2026</h1>
-      <div class="sub">סביב אתלטיקו–ברצלונה, ובסיס להישאר בספרד אחריו</div>
+      <div class="sub">חופשת סולו במדריד: כדורגל, אמנות, אנשים, והוצאת DNI</div>
 
       <div class="countdown">
         <div class="cd">ימים במדריד<b id="cdDays">—</b></div>
-        <div class="cd">תאריכי הטיול<b>1–30.11</b></div>
+        <div class="cd">תאריכי הטיול<b>1–22.11</b></div>
         <div class="cd">תקציב מאוזן<b>€2,870</b></div>
       </div>
 
@@ -38,7 +38,7 @@
     <a class="card" href="dossier.html">
       <div class="ck">DOSSIER</div>
       <div class="ch">תיק הטיול</div>
-      <div class="cd2">תשעה פרקים: המשחק והתאריכים, נובמבר במדריד, שכונות, לינה, חיי לילה, מועדונים, תקציב, מבנה הימים ורשימת משימות.</div>
+      <div class="cd2">שמונה פרקים: מבנה הימים וההמלצות, המטרה, המשחק והתאריכים, נובמבר במדריד, שכונות, איפה לגור, חיי לילה ומועדונים.</div>
     </a>
     <a class="card" href="budget.html">
       <div class="ck">CALCULATOR</div>
@@ -55,12 +55,13 @@
 </div>
 <script>
 (function(){
-  // ימים במדריד: יום הנחיתה (1.11) הוא יום 1, לפי התאריך במכשיר
+  // ימים במדריד: יום הנחיתה (1.11) הוא יום 1, לפי התאריך במכשיר; אחרי הטיסה
+  // הביתה (22.11) נשאר על 22
   const el = document.getElementById('cdDays');
   const now = new Date();
   const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
   const day = Math.floor((today - Date.UTC(2026, 10, 1)) / 86400000) + 1;
-  el.textContent = day >= 1 ? day : '—';
+  el.textContent = day >= 1 ? Math.min(day, 22) : '—';
 })();
 </script>
 <script type="module" src="assets/auth-guard.js"></script>
